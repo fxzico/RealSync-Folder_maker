@@ -1,27 +1,27 @@
 # SyncFlow Automator
 
-A lightweight, cross-platform automation utility designed for post-production editing pipelines utilizing **Adapt Real Sync**. It eliminates manual directory creation bottlenecks and error-prone file renaming loops.
+A lightweight, cross-platform desktop utility built with a native Python Tkinter GUI to automate deep-nested directory structures and run global shortcut-based renaming actions for post-production syncing pipelines.
 
-## 🚀 Key Features
+## 🚀 Core Functionalities
 
-* **Mode A [All Structure]:** Instantly deploys macro studio pipelines (`/Projects`, `/Media`, `/Exports`, etc.).
-* **Mode C [Character Exports]:** Generates zero-padded sequence folders (`Scene_01`, `Scene_02`) across multiple characters, automatically appending format subfolders (`MP4`, `Quicktime`, `SyncSO`, `Lipdub`, `Audio`).
-* **Double-Shift Global Renaming:** Tap `Shift` twice on any highlighted file inside Windows Explorer or Mac Finder to open a smart, context-aware overlay prompt to enter the `Shot Number`.
-* **Integrated Search:** Search-as-you-type directory scanner to jump instantly into deep nested project paths.
+* **Mode A [All Structure]:** Instantly Deploys micro studio pipelines (`/Projects`, `/Media`, `/Exports`, etc.) in the target directory.
+* **Mode C [Character Exports]:** Generates zero-padded sequence folders (`Scene_01`, `Scene_02`) dynamically across custom character arrays, creating target format subfolders (`MP4`, `Quicktime`, `SyncSO`, `Lipdub`, `Audio`).
+* **Double-Shift Global Renaming:** Tap the `Shift` key twice rapidly on any highlighted asset inside Windows Explorer or Mac Finder to call up a sleek, context-aware prompt layer to input the `Shot Number`.
+* **Integrated Jump Search:** Live, recursive search filter allowing post-production editors to navigate directly into deeply nested character paths instantaneously.
 
-## 📸 Screenshots
+## 📸 Interface Walkthrough
 
-### Main Interface
-![Main GUI Canvas](screenshots/main_interface.png)
+### Main Configuration Grid
+![Main GUI Workspace](screenshots/main_interface.png)
 
-### Double-Shift Active Context Overlay
-![Context Renamer Pop-up](screenshots/overlay_popup.png)
+### Double-Shift Active Context Overlay Prompt
+![Context Renamer Dialog](screenshots/overlay_popup.png)
 
-## 🛠️ How to Compile Natively
+## 🛠️ Compilation Blueprint
 
-Ensure you have Python installed, then run:
+To build a fresh, portable binary wrapper natively on your operating system, execute:
 ```bash
-pip install pyinstaller pynput customtkinter
-python -m PyInstaller --noconsole --onefile --name="SyncFlow_Automator" main.py
+pip install pyinstaller pynput
+pyinstaller --noconsole --onefile main.py
 ```
-Find your compiled, zero-dependency executable inside the `/dist/` folder!
+The standalone binary will generate inside the local /dist/ workspace folder.
