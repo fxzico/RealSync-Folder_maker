@@ -24,4 +24,11 @@ To build a fresh, portable binary wrapper natively on your operating system, exe
 pip install pyinstaller pynput
 pyinstaller --noconsole --onefile main.py
 ```
-The standalone binary will generate inside the local /dist/ workspace folder.
+The standalone binary will generate inside the local `/dist/` workspace folder.
+
+> [!TIP]
+> **macOS Running Option (Quick Handover):** If a compiled `.dmg` installer is not attached to the release, Mac editors can run the utility natively from source. Install dependencies using `pip install pynput` and execute:
+> ```bash
+> python main.py
+> ```
+
