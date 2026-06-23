@@ -5,10 +5,7 @@ import threading
 import subprocess
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, messagebox
-
-# Import CustomTkinter for sleek modern appearance
-import customtkinter as ctk
+from tkinter import ttk, messagebox, filedialog
 
 # Attempt to import global keyboard listener hook
 try:
@@ -122,7 +119,7 @@ def get_selected_file_paths():
         return paths
                 
     elif sys.platform == "darwin":
-        # Robust AppleScript to fetch selected item directly from macOS Finder
+        # AppleScript to fetch selected item directly from macOS Finder
         ascript = (
             "tell application \"Finder\"\n"
             "    set theSelection to selection\n"
@@ -142,7 +139,7 @@ def get_selected_file_paths():
     return []
 
 def open_in_file_manager(path):
-    """Opens the specified directory path directly in the native OS file manager."""
+    """Opens the specified directory path directly in the native OS window."""
     if sys.platform == "win32":
         os.startfile(path)
     elif sys.platform == "darwin":
@@ -180,7 +177,7 @@ def parse_context_from_path(file_path_str):
         # Step backward to intelligently determine Reel and Movie names, skipping intermediate folders
         temp_idx = anchor_idx - 1
         reel = "Reel_01"
-        movie = "Movie"
+        movie = "Show_Name"
         
         skip_names = {"exports", "media", "projects"}
         
@@ -209,56 +206,48 @@ def parse_context_from_path(file_path_str):
     except Exception:
         return None
 
-class RenameOverlay(ctk.CTkToplevel):
+class RenameOverlay:
     """Minimalist borderless always-on-top modal for Shot number entry."""
-    def __init__(self, parent, context):
-        super().__init__(parent)
-        self.parent = parent
+    def __init__(self, root, context):
+        self.root = root
         self.context = context
         
-        # Borderless and Always-on-top window setup
-        self.overrideredirect(True)
-        self.attributes("-topmost", True)
-        self.configure(fg_color="#18181a")
+        self.win = tk.Toplevel(root)
+        self.win.withdraw()
+        self.win.overrideredirect(True)
+        self.win.attributes("-topmost", True)
+        self.win.configure(bg="#1e1e24")
         
         # Center Screen Alignment Calculation
-        self.update_idletasks()
-        w, h = 500, 160
-        sx = (self.winfo_screenwidth() // 2) - (w // 2)
-        sy = (self.winfo_screenheight() // 2) - (h // 2)
-        self.geometry(f"{w}x{h}+{sx}+{sy}")
-        
-        # Background canvas frame to draw border
-        bg_frame = ctk.CTkFrame(self, fg_color="#18181a", border_color="#00adb5", border_width=1, corner_radius=8)
-        bg_frame.pack(fill=tk.BOTH, expand=True)
+        self.win.update_idletasks()
+        w, h = 500, 140
+        sx = (self.win.winfo_screenwidth() // 2) - (w // 2)
+        sy = (self.win.winfo_screenheight() // 2) - (h // 2)
+        self.win.geometry(f"{w}x{h}+{sx}+{sy}")
         
         # Content Widgets
-        lbl_info = ctk.CTkLabel(
-            bg_frame, 
+        lbl_info = tk.Label(
+            self.win, 
             text=f"Detected: {context['movie']} | {context['reel']} | {context['scene']} | {context['character']} | {context['format_folder']}",
-            text_color="#8e8e93", font=("Segoe UI", 11, "bold")
+            fg="#a4a4a4", bg="#1e1e24", font=("Segoe UI", 9, "bold")
         )
-        lbl_info.pack(pady=(20, 5), padx=15)
+        lbl_info.pack(pady=(15, 5), padx=15)
         
-        lbl_prompt = ctk.CTkLabel(bg_frame, text="Enter Shot Number:", text_color="#ffffff", font=("Segoe UI", 13))
-        lbl_prompt.pack(pady=2)
+        lbl_prompt = tk.Label(self.win, text="Enter Shot Number:", fg="#ffffff", bg="#1e1e24", font=("Segoe UI", 11))
+        lbl_prompt.pack()
         
-        self.entry = ctk.CTkEntry(
-            bg_frame, fg_color="#242428", text_color="#ffffff", 
-            insert_color="white", font=("Segoe UI", 14), justify="center",
-            width=140, height=32, corner_radius=6, border_color="#3e3e42"
+        self.entry = tk.Entry(
+            self.win, bg="#2d2d34", fg="#ffffff", insertbackground="white", 
+            font=("Segoe UI", 12), justify="center", bd=0, highlightthickness=1, 
+            highlightbackground="#44444c"
         )
-        self.entry.pack(pady=10)
-        
-        # Auto-focus the entry field
-        self.after(100, self.force_focus)
-        
-        self.bind("<Return>", self.execute_rename)
-        self.bind("<Escape>", lambda e: self.destroy())
-
-    def force_focus(self):
-        self.focus_force()
+        self.entry.pack(pady=5, ipady=3, width=120)
         self.entry.focus_set()
+        
+        self.win.bind("<Return>", self.execute_rename)
+        self.win.bind("<Escape>", lambda e: self.win.destroy())
+        
+        self.win.deiconify()
 
     def execute_rename(self, event=None):
         shot_num = self.entry.get().strip()
@@ -295,16 +284,11 @@ class RenameOverlay(ctk.CTkToplevel):
         target_path = ctx['original_path'].parent / new_name
         
         try:
-            if target_path.exists():
-                if not messagebox.askyesno("File Conflict", f"File '{new_name}' already exists.\nDo you want to overwrite it?"):
-                    return
-            
             os.rename(ctx['original_path'], target_path)
-            self.parent.show_status(f"Successfully renamed file to '{new_name}'", "success")
         except Exception as e:
-            messagebox.showerror("Rename Error", f"Failed to rename file:\n{e}")
+            messagebox.showerror("Error", f"Rename failed:\n{e}")
         finally:
-            self.destroy()
+            self.win.destroy()
 
 # ==========================================
 # 3. GLOBAL KEYBOARD HOOK LISTENER
@@ -314,13 +298,13 @@ class DoubleShiftListener:
     def __init__(self, trigger_callback):
         self.trigger_callback = trigger_callback
         self.last_shift_time = 0
-        self.threshold = 0.4  # Time window for double tap (400ms)
+        self.threshold = 0.4
         
     def on_press(self, key):
         if key in (keyboard.Key.shift, keyboard.Key.shift_r):
             now = time.time()
             if now - self.last_shift_time < self.threshold:
-                self.last_shift_time = 0  # reset to avoid triple-tap double-firing
+                self.last_shift_time = 0
                 self.trigger_callback()
             else:
                 self.last_shift_time = now
@@ -335,161 +319,85 @@ class DoubleShiftListener:
 # 4. MAIN GRAPHICAL USER INTERFACE & SEARCH
 # ==========================================
 
-class SyncFlowApp(ctk.CTk):
-    def __init__(self):
-        super().__init__()
+class SyncFlowApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("SyncFlow Automator")
+        self.root.geometry("680x580")
+        self.root.configure(bg="#121214")
         
-        # Theme configuration
-        ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("blue")
-        
-        self.title("SyncFlow Automator")
-        self.geometry("720x640")
-        self.configure(fg_color="#121214")
-        
-        # Build layout
+        self.setup_styles()
         self.build_ui()
         
-        # Initialize Global Double Shift Hook
         if keyboard:
-            try:
-                self.listener = DoubleShiftListener(self.handle_global_rename_trigger)
-                self.listener.start()
-                self.show_status("Double-Shift Listener: Active", "success")
-            except Exception as e:
-                self.show_status(f"Failed to start hotkey listener: {e}", "error")
-        else:
-            self.show_status("Double-Shift Listener: Disabled (pynput missing)", "warning")
-            messagebox.showwarning("Dependency Warning", "pynput is not installed. Global Double-Shift hotkey renaming is unavailable.")
+            self.listener = DoubleShiftListener(self.handle_global_rename_trigger)
+            self.listener.start()
+
+    def setup_styles(self):
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure(".", background="#121214", foreground="#ffffff", font=("Segoe UI", 10))
+        style.configure("TLabel", background="#121214", foreground="#b0b0b8")
+        style.configure("TFrame", background="#121214")
+        style.configure("TEntry", fieldbackground="#1e1e24", foreground="#ffffff", borderwidth=0)
+        style.map("TEntry", fieldbackground=[("focus", "#2d2d34")])
+        style.configure("Action.TButton", background="#007acc", foreground="#ffffff", borderwidth=0, font=("Segoe UI", 10, "bold"))
+        style.map("Action.TButton", background=[("active", "#0098ff")])
+        style.configure("Secondary.TButton", background="#2d2d34", foreground="#ffffff", borderwidth=0)
+        style.map("Secondary.TButton", background=[("active", "#3e3e46")])
 
     def build_ui(self):
-        # Master Frame
-        main_frame = ctk.CTkFrame(self, fg_color="#121214")
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=24, pady=16)
+        main_frame = ttk.Frame(self.root, padding=20)
+        main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Title Label
-        title_lbl = ctk.CTkLabel(
-            main_frame, text="SYNCFLOW AUTOMATOR", 
-            font=("Segoe UI", 18, "bold"), text_color="#00adb5"
-        )
-        title_lbl.pack(anchor=tk.W, pady=(0, 15))
+        path_frame = ttk.Frame(main_frame)
+        path_frame.pack(fill=tk.X, pady=5)
+        ttk.Label(path_frame, text="Target Project Root Directory:").pack(anchor=tk.W)
+        self.ent_path = tk.Entry(path_frame, bg="#1e1e24", fg="#ffffff", bd=0, insertbackground="white")
+        self.ent_path.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4, pady=2)
+        ttk.Button(path_frame, text="Browse", style="Secondary.TButton", command=self.browse_dir).pack(side=tk.RIGHT, padx=(5, 0))
         
-        # Path Entry Frame
-        path_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        path_frame.pack(fill=tk.X, pady=4)
+        grid_frame = ttk.Frame(main_frame)
+        grid_frame.pack(fill=tk.X, pady=10)
         
-        path_lbl = ctk.CTkLabel(path_frame, text="Target Project Root Directory:", text_color="#e0e0e6", font=("Segoe UI", 11, "bold"))
-        path_lbl.pack(anchor=tk.W, pady=2)
+        ttk.Label(grid_frame, text="Project Name:").grid(row=0, column=0, sticky=tk.W, pady=4)
+        self.ent_movie = tk.Entry(grid_frame, bg="#1e1e24", fg="#ffffff", bd=0, insertbackground="white")
+        self.ent_movie.grid(row=0, column=1, sticky=tk.EW, padx=(5, 20), ipady=4)
         
-        path_input_row = ctk.CTkFrame(path_frame, fg_color="transparent")
-        path_input_row.pack(fill=tk.X)
+        ttk.Label(grid_frame, text="Reel Number:").grid(row=0, column=2, sticky=tk.W, pady=4)
+        self.ent_reel = tk.Entry(grid_frame, bg="#1e1e24", fg="#ffffff", bd=0, insertbackground="white")
+        self.ent_reel.grid(row=0, column=3, sticky=tk.EW, ipady=4)
         
-        self.ent_path = ctk.CTkEntry(
-            path_input_row, fg_color="#1e1e24", text_color="#ffffff", 
-            border_color="#3e3e42", height=32, corner_radius=6,
-            placeholder_text="e.g. C:\\RealSyncProjects\\"
-        )
-        self.ent_path.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Label(grid_frame, text="Characters (comma separated):").grid(row=1, column=0, sticky=tk.W, pady=8)
+        self.ent_chars = tk.Entry(grid_frame, bg="#1e1e24", fg="#ffffff", bd=0, insertbackground="white")
+        self.ent_chars.grid(row=1, column=1, sticky=tk.EW, padx=(5, 20), ipady=4)
         
-        btn_browse = ctk.CTkButton(
-            path_input_row, text="Browse", width=80, height=32, 
-            fg_color="#2d2d34", hover_color="#3e3e46", text_color="#ffffff",
-            font=("Segoe UI", 11, "bold"), corner_radius=6, command=self.browse_dir
-        )
-        btn_browse.pack(side=tk.RIGHT, padx=(8, 0))
+        ttk.Label(grid_frame, text="Number of Scenes:").grid(row=1, column=2, sticky=tk.W, pady=8)
+        self.ent_scenes = tk.Entry(grid_frame, bg="#1e1e24", fg="#ffffff", bd=0, insertbackground="white")
+        self.ent_scenes.grid(row=1, column=3, sticky=tk.EW, ipady=4)
         
-        # Variable Parameter Grid
-        grid_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        grid_frame.pack(fill=tk.X, pady=12)
+        grid_frame.columnconfigure(1, weight=1)
+        grid_frame.columnconfigure(3, weight=1)
         
-        # Col 0, 1: Movie, Reel
-        lbl_movie = ctk.CTkLabel(grid_frame, text="Movie/Series Name:", text_color="#b0b0b8", font=("Segoe UI", 11))
-        lbl_movie.grid(row=0, column=0, sticky=tk.W, pady=4)
-        self.ent_movie = ctk.CTkEntry(grid_frame, fg_color="#1e1e24", border_color="#3e3e42", height=30, width=180, placeholder_text="e.g. Blood_Brother")
-        self.ent_movie.grid(row=0, column=1, sticky=tk.W, padx=(5, 20), pady=4)
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X, pady=15)
         
-        lbl_reel = ctk.CTkLabel(grid_frame, text="Reel Number:", text_color="#b0b0b8", font=("Segoe UI", 11))
-        lbl_reel.grid(row=0, column=2, sticky=tk.W, pady=4)
-        self.ent_reel = ctk.CTkEntry(grid_frame, fg_color="#1e1e24", border_color="#3e3e42", height=30, width=180, placeholder_text="e.g. 01")
-        self.ent_reel.grid(row=0, column=3, sticky=tk.W, pady=4)
-        
-        # Col 2, 3: Characters, Scenes
-        lbl_chars = ctk.CTkLabel(grid_frame, text="Character Names:", text_color="#b0b0b8", font=("Segoe UI", 11))
-        lbl_chars.grid(row=1, column=0, sticky=tk.W, pady=8)
-        self.ent_chars = ctk.CTkEntry(grid_frame, fg_color="#1e1e24", border_color="#3e3e42", height=30, width=180, placeholder_text="e.g. Ariff, Rohan, Maya")
-        self.ent_chars.grid(row=1, column=1, sticky=tk.W, padx=(5, 20), pady=8)
-        
-        lbl_scenes = ctk.CTkLabel(grid_frame, text="Number of Scenes:", text_color="#b0b0b8", font=("Segoe UI", 11))
-        lbl_scenes.grid(row=1, column=2, sticky=tk.W, pady=8)
-        self.ent_scenes = ctk.CTkEntry(grid_frame, fg_color="#1e1e24", border_color="#3e3e42", height=30, width=180, placeholder_text="e.g. 12")
-        self.ent_scenes.grid(row=1, column=3, sticky=tk.W, pady=8)
-        
-        # Action Buttons Layout Frame
-        btn_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        btn_frame.pack(fill=tk.X, pady=8)
-        
-        self.btn_mode_a = ctk.CTkButton(
-            btn_frame, text="Mode A: [All Structure]", fg_color="#00adb5", hover_color="#00989f",
-            text_color="#121214", font=("Segoe UI", 12, "bold"), height=36, corner_radius=6,
-            command=lambda: self.generate_structure("all")
-        )
-        self.btn_mode_a.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
-        
-        self.btn_mode_b = ctk.CTkButton(
-            btn_frame, text="Mode B: [Exports Only]", fg_color="#2d2d34", hover_color="#3e3e46",
-            text_color="#ffffff", font=("Segoe UI", 12), height=36, corner_radius=6,
-            command=lambda: self.generate_structure("exports")
-        )
-        self.btn_mode_b.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
-        
-        self.btn_mode_c = ctk.CTkButton(
-            btn_frame, text="Mode C: [Character Exports]", fg_color="#2d2d34", hover_color="#3e3e46",
-            text_color="#ffffff", font=("Segoe UI", 12), height=36, corner_radius=6,
-            command=lambda: self.generate_structure("characters")
-        )
-        self.btn_mode_c.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        ttk.Button(btn_frame, text="Mode A: [All Structure]", style="Action.TButton", command=lambda: self.generate_structure("all")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        ttk.Button(btn_frame, text="Mode B: [Exports Only]", style="Secondary.TButton", command=lambda: self.generate_structure("exports")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        ttk.Button(btn_frame, text="Mode C: [Character Exports Only]", style="Secondary.TButton", command=lambda: self.generate_structure("characters")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
 
-        # Separator Line
-        sep = ctk.CTkFrame(main_frame, height=2, fg_color="#242428")
-        sep.pack(fill=tk.X, pady=16)
+        sep = ttk.Separator(main_frame, orient='horizontal')
+        sep.pack(fill=tk.X, pady=10)
 
-        # Integrated Quick Search Section
-        search_lbl = ctk.CTkLabel(main_frame, text="Jump-to-Folder Quick Search:", text_color="#e0e0e6", font=("Segoe UI", 12, "bold"))
-        search_lbl.pack(anchor=tk.W, pady=(0, 2))
-        
-        self.ent_search = ctk.CTkEntry(
-            main_frame, fg_color="#1e1e24", text_color="#ffffff", 
-            border_color="#3e3e42", height=32, corner_radius=6,
-            placeholder_text="Type keywords (e.g. 'Ariff Scene 3') and press Enter to open folder..."
-        )
-        self.ent_search.pack(fill=tk.X, pady=4)
+        ttk.Label(main_frame, text="Quick Search (e.g., 'Char_A Scene 1')", font=("Segoe UI", 10, "bold")).pack(anchor=tk.W)
+        self.ent_search = tk.Entry(main_frame, bg="#1e1e24", fg="#ffffff", bd=0, insertbackground="white")
+        self.ent_search.pack(fill=tk.X, ipady=4, pady=5)
         self.ent_search.bind("<KeyRelease>", self.update_search)
-        self.ent_search.bind("<Return>", self.open_selected_search_path)
         
-        # Search Results Frame and ListBox
-        results_frame = ctk.CTkFrame(main_frame, fg_color="#1e1e24", border_color="#3e3e42", border_width=1, corner_radius=6)
-        results_frame.pack(fill=tk.BOTH, expand=True, pady=4)
-        
-        # Scrollbar for listbox
-        scrollbar = tk.Scrollbar(results_frame, orient="vertical", width=12)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        self.listbox = tk.Listbox(
-            results_frame, bg="#1e1e24", fg="#ffffff", selectbackground="#00adb5", 
-            selectforeground="#121214", bd=0, highlightthickness=0, font=("Segoe UI", 10),
-            yscrollcommand=scrollbar.set
-        )
-        self.listbox.pack(fill=tk.BOTH, expand=True, padx=8, pady=6)
-        scrollbar.config(command=self.listbox.yview)
-        
+        self.listbox = tk.Listbox(main_frame, bg="#1e1e24", fg="#ffffff", selectbackground="#007acc", selectforeground="white", bd=0, highlightthickness=0)
+        self.listbox.pack(fill=tk.BOTH, expand=True, pady=2)
         self.listbox.bind("<Double-Button-1>", self.open_selected_search_path)
-        
-        # Status Bar Footer
-        self.status_bar = ctk.CTkLabel(
-            self, text="Ready", height=24, fg_color="#18181a", 
-            text_color="#8e8e93", font=("Segoe UI", 10), anchor=tk.W
-        )
-        self.status_bar.pack(fill=tk.X, side=tk.BOTTOM, padx=0, pady=0)
+        self.listbox.bind("<Return>", self.open_selected_search_path)
 
     def browse_dir(self):
         selected = filedialog.askdirectory()
@@ -498,14 +406,10 @@ class SyncFlowApp(ctk.CTk):
             self.ent_path.insert(0, selected)
 
     def get_inputs(self):
-        movie_name = self.ent_movie.get().strip().replace(" ", "_")
-        r_val = self.ent_reel.get().strip()
-        reel_num = f"Reel_{int(r_val):02d}" if r_val.isdigit() else r_val.replace(" ", "_")
-        
         return {
             "root": self.ent_path.get().strip(),
-            "movie": movie_name,
-            "reel": reel_num,
+            "movie": self.ent_movie.get().strip().replace(" ", "_"),
+            "reel": f"Reel_{int(r):02d}" if (r := self.ent_reel.get().strip()).isdigit() else r.replace(" ", "_"),
             "characters": [c.strip() for c in self.ent_chars.get().split(",") if c.strip()],
             "scenes": int(s) if (s := self.ent_scenes.get().strip()).isdigit() else 0
         }
@@ -513,7 +417,7 @@ class SyncFlowApp(ctk.CTk):
     def generate_structure(self, mode):
         inputs = self.get_inputs()
         if not inputs["root"] or not os.path.exists(inputs["root"]):
-            messagebox.showerror("Validation Error", "Please select a valid Target Project Root Directory.")
+            messagebox.showerror("Error", "Please input a valid Root Directory Path.")
             return
             
         root_dir = Path(inputs["root"])
@@ -527,12 +431,10 @@ class SyncFlowApp(ctk.CTk):
             project_root = root_dir / reel
         else:
             if not movie or not reel:
-                messagebox.showerror("Validation Error", "Movie/Series Name and Reel Number are required to generate root folders.")
+                messagebox.showerror("Error", "Project Name and Reel Number are required to generate root folders.")
                 return
             project_root = root_dir / movie / reel
             
-        t_start = time.time()
-        
         try:
             # Mode A: Generates the core macro structure at the root project folder
             if mode == "all":
@@ -562,7 +464,7 @@ class SyncFlowApp(ctk.CTk):
             # Mode C: Under Character Exports, builds character directories, scene folders, and 5 format subfolders
             if mode in ("all", "characters"):
                 if not inputs["characters"] or inputs["scenes"] <= 0:
-                    messagebox.showerror("Validation Error", "Character names and a valid total Scene count are required for this action.")
+                    messagebox.showerror("Error", "Character names and a valid total Scene count are required for this action.")
                     return
                 
                 # To be robust, we populate folders in multiple possible layout standards
@@ -582,17 +484,11 @@ class SyncFlowApp(ctk.CTk):
                         for base in char_bases:
                             for fmt in formats:
                                 os.makedirs(base / char / scene_folder_name / fmt, exist_ok=True)
-            
-            elapsed = time.time() - t_start
-            success_msg = f"Directories generated in {elapsed:.3f} seconds."
-            self.show_status(success_msg, "success")
-            messagebox.showinfo("Success", f"{success_msg}\nProject Path: {project_root}")
-            
-            # Auto update search with new folders
+                                
+            messagebox.showinfo("Success", f"Structure built successfully via Mode: {mode.upper()}\nProject Path: {project_root}")
             self.update_search()
         except Exception as e:
-            self.show_status(f"Structure generation failed: {e}", "error")
-            messagebox.showerror("Processing Failure", f"An unexpected error occurred during directory generation:\n{e}")
+            messagebox.showerror("Failure", f"An unexpected error occurred:\n{e}")
 
     def update_search(self, event=None):
         query = self.ent_search.get().strip().lower()
@@ -605,58 +501,37 @@ class SyncFlowApp(ctk.CTk):
         query_words = query.split()
         match_count = 0
         
-        # Scan folder trees cleanly
         for root, dirs, files in os.walk(root_dir):
             for d in dirs:
                 full_path = os.path.join(root, d)
                 normalized_path = full_path.lower()
                 
-                # Check if all search query keywords reside inside the discovered subpath string
                 if not query_words or all(word in normalized_path for word in query_words):
                     self.listbox.insert(tk.END, full_path)
                     match_count += 1
-                    if match_count >= 150:  # Cap UI display elements to prevent lagging
+                    if match_count >= 150:
                         return
 
     def open_selected_search_path(self, event=None):
         selection = self.listbox.get(tk.ACTIVE)
         if selection and os.path.exists(selection):
             open_in_file_manager(selection)
-            self.show_status(f"Opened folder: {Path(selection).name}", "success")
 
     def handle_global_rename_trigger(self):
-        """Cross-Thread safe execution launcher for double-shift event."""
-        self.after(0, self.execute_rename_popup_flow)
+        self.root.after(0, self.execute_rename_popup_flow)
 
     def execute_rename_popup_flow(self):
         paths = get_selected_file_paths()
         if not paths:
-            self.show_status("Hotkey triggered, but no file selected in file manager.", "warning")
             return
             
         target_file = paths[0]
         context = parse_context_from_path(target_file)
         
         if context:
-            RenameOverlay(self, context)
-        else:
-            self.show_status("Selected file is not in a valid Character Exports folder structure.", "error")
-            # Log full context error to status bar
-            self.show_status(f"Path Error: '{Path(target_file).name}' is outside Character Exports.", "error")
-
-    def show_status(self, message, msg_type="info"):
-        colors = {
-            "success": "#00adb5",
-            "warning": "#ffb86c",
-            "error": "#ff5555",
-            "info": "#8e8e93"
-        }
-        self.status_bar.configure(text=f"  {message}", text_color=colors.get(msg_type, "#8e8e93"))
-
-# ==========================================
-# 5. INITIALIZATION ENTRY POINT
-# ==========================================
+            RenameOverlay(self.root, context)
 
 if __name__ == "__main__":
-    app = SyncFlowApp()
-    app.mainloop()
+    root = tk.Tk()
+    app = SyncFlowApp(root)
+    root.mainloop()
