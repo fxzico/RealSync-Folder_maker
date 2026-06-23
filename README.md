@@ -19,13 +19,25 @@ A lightweight, cross-platform desktop utility built with a native Python Tkinter
 
 ## 🛠️ Compilation Blueprint
 
-To build a fresh, portable binary wrapper natively on your operating system, execute:
+### Windows (.exe)
+To compile the script on Windows, run:
 ```bash
 pip install pyinstaller
 pyinstaller --noconsole --onefile --name="SyncFlow_Automator" main.py
 ```
+The standalone binary will generate inside the local `/dist/` workspace folder as `SyncFlow_Automator.exe`.
 
-The standalone binary will generate inside the local `/dist/` workspace folder.
+### macOS (.app / .dmg)
+To compile a native macOS application bundle and package it into a mounting disk image (`.dmg`), run on a Mac machine:
+```bash
+# 1. Compile the script into a native macOS App bundle
+pip install pyinstaller
+pyinstaller --noconsole --onefile --name="SyncFlow_Automator" main.py
+
+# 2. Package the compiled app directly into a mounting installer (.dmg)
+hdiutil create -format UDZO -srcfolder dist/SyncFlow_Automator.app dist/SyncFlow_Automator.dmg
+```
+The standalone files will generate inside the `/dist/` workspace folder.
 
 > [!TIP]
 > **macOS Running Option (Quick Handover):** If a compiled `.dmg` installer is not attached to the release, Mac editors can run the utility natively from source (no external dependencies required). Simply execute:
