@@ -470,20 +470,16 @@ class SyncFlowApp:
                     messagebox.showerror("Error", "Character names and a valid total Scene count are required.")
                     return
                 
-                char_bases = [
-                    project_root / "Projects/Media/Character Exports",
-                    project_root / "Character Exports",
-                    project_root / "Exports/Character Exports"
-                ]
+                # EXACT nested path format: [Target Path] \ [Project_Name] \ Reel_[Number] \ Exports \ Character Exports
+                char_base = project_root / "Exports" / "Character Exports"
                 formats = ["MP4", "Quicktime", "SyncSO", "Lipdub", "Audio"]
                 padding_width = max(2, len(str(scenes)))
                 
                 for char in chars:
                     for s in range(1, scenes + 1):
                         scene_folder_name = f"Scene_{s:0{padding_width}d}"
-                        for base in char_bases:
-                            for fmt in formats:
-                                os.makedirs(base / char / scene_folder_name / fmt, exist_ok=True)
+                        for fmt in formats:
+                            os.makedirs(char_base / char / scene_folder_name / fmt, exist_ok=True)
 
             messagebox.showinfo("Success", f"Folders deployed successfully!\nProject Path: {project_root}")
             self.update_search()
