@@ -1,20 +1,12 @@
 import os
 import sys
 import time
-import threading
-import subprocess
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
-# Attempt to import global keyboard listener hook
-try:
-    from pynput import keyboard
-except ImportError:
-    keyboard = None
-
 # ==========================================
-# 1. CORE UTILITIES & PLATFORM INTEGRATION
+# 1. PLATFORM-SPECIFIC SELECTED FILE DETECTION
 # ==========================================
 
 def get_clipboard_text_win():
@@ -129,7 +121,8 @@ def get_selected_file_paths():
             "end tell"
         )
         try:
-            proc = subprocess.run(['osascript', '-e', ascript], capture_output=True, text=True)
+            import subprocess
+            proc = subprocess.run(['osascript', '-e', ascript], capture_output=True, text=True, timeout=2)
             path_str = proc.stdout.strip()
             if path_str:
                 return [path_str]
@@ -143,8 +136,10 @@ def open_in_file_manager(path):
     if sys.platform == "win32":
         os.startfile(path)
     elif sys.platform == "darwin":
+        import subprocess
         subprocess.run(["open", path])
     else:
+        import subprocess
         subprocess.run(["xdg-open", path])
 
 # ==========================================
@@ -225,26 +220,31 @@ class RenameOverlay:
         sy = (self.win.winfo_screenheight() // 2) - (h // 2)
         self.win.geometry(f"{w}x{h}+{sx}+{sy}")
         
+        # Background canvas frame to draw border
+        bg_frame = tk.Frame(self.win, bg="#1e1e24", highlightbackground="#007acc", highlightthickness=1)
+        bg_frame.pack(fill=tk.BOTH, expand=True)
+        
         # Content Widgets
         lbl_info = tk.Label(
-            self.win, 
+            bg_frame, 
             text=f"Detected: {context['movie']} | {context['reel']} | {context['scene']} | {context['character']} | {context['format_folder']}",
             fg="#a4a4a4", bg="#1e1e24", font=("Segoe UI", 9, "bold")
         )
         lbl_info.pack(pady=(15, 5), padx=15)
         
-        lbl_prompt = tk.Label(self.win, text="Enter Shot Number:", fg="#ffffff", bg="#1e1e24", font=("Segoe UI", 11))
+        lbl_prompt = tk.Label(bg_frame, text="Enter Shot Number:", fg="#ffffff", bg="#1e1e24", font=("Segoe UI", 11))
         lbl_prompt.pack()
         
         self.entry = tk.Entry(
-            self.win, bg="#2d2d34", fg="#ffffff", insertbackground="white", 
+            bg_frame, bg="#2d2d34", fg="#ffffff", insertbackground="white", 
             font=("Segoe UI", 12), justify="center", bd=0, highlightthickness=1, 
             highlightbackground="#44444c"
         )
         self.entry.pack(pady=5, ipady=3, width=120)
         self.entry.focus_set()
         
-        self.win.bind("<Return>", self.execute_rename)
+        # Allow pasting (tk.Entry supports Ctrl+V natively on Windows/Linux; add Command+V on Mac if needed)
+        self.entry.bind("<Return>", self.execute_rename)
         self.win.bind("<Escape>", lambda e: self.win.destroy())
         
         self.win.deiconify()
@@ -284,6 +284,9 @@ class RenameOverlay:
         target_path = ctx['original_path'].parent / new_name
         
         try:
+            if target_path.exists():
+                if not messagebox.askyesno("File Conflict", f"File '{new_name}' already exists.\nDo you want to overwrite it?"):
+                    return
             os.rename(ctx['original_path'], target_path)
         except Exception as e:
             messagebox.showerror("Error", f"Rename failed:\n{e}")
@@ -291,113 +294,108 @@ class RenameOverlay:
             self.win.destroy()
 
 # ==========================================
-# 3. GLOBAL KEYBOARD HOOK LISTENER
-# ==========================================
-
-class DoubleShiftListener:
-    def __init__(self, trigger_callback):
-        self.trigger_callback = trigger_callback
-        self.last_shift_time = 0
-        self.threshold = 0.4
-        
-    def on_press(self, key):
-        if key in (keyboard.Key.shift, keyboard.Key.shift_r):
-            now = time.time()
-            if now - self.last_shift_time < self.threshold:
-                self.last_shift_time = 0
-                self.trigger_callback()
-            else:
-                self.last_shift_time = now
-
-    def start(self):
-        if keyboard:
-            listener = keyboard.Listener(on_press=self.on_press)
-            listener.daemon = True
-            listener.start()
-
-# ==========================================
-# 4. MAIN GRAPHICAL USER INTERFACE & SEARCH
+# 3. MAIN APP INTERFACE
 # ==========================================
 
 class SyncFlowApp:
     def __init__(self, root):
         self.root = root
         self.root.title("SyncFlow Automator")
-        self.root.geometry("680x580")
+        self.root.geometry("680x570")
         self.root.configure(bg="#121214")
         
-        self.setup_styles()
-        self.build_ui()
-        
-        if keyboard:
-            self.listener = DoubleShiftListener(self.handle_global_rename_trigger)
-            self.listener.start()
+        self.build_clean_ui()
 
-    def setup_styles(self):
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure(".", background="#121214", foreground="#ffffff", font=("Segoe UI", 10))
-        style.configure("TLabel", background="#121214", foreground="#b0b0b8")
-        style.configure("TFrame", background="#121214")
-        style.configure("TEntry", fieldbackground="#1e1e24", foreground="#ffffff", borderwidth=0)
-        style.map("TEntry", fieldbackground=[("focus", "#2d2d34")])
-        style.configure("Action.TButton", background="#007acc", foreground="#ffffff", borderwidth=0, font=("Segoe UI", 10, "bold"))
-        style.map("Action.TButton", background=[("active", "#0098ff")])
-        style.configure("Secondary.TButton", background="#2d2d34", foreground="#ffffff", borderwidth=0)
-        style.map("Secondary.TButton", background=[("active", "#3e3e46")])
-
-    def build_ui(self):
-        main_frame = ttk.Frame(self.root, padding=20)
+    def build_clean_ui(self):
+        main_frame = tk.Frame(self.root, bg="#121214", padx=20, pady=20)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        path_frame = ttk.Frame(main_frame)
-        path_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(path_frame, text="Target Project Root Directory:").pack(anchor=tk.W)
-        self.ent_path = tk.Entry(path_frame, bg="#1e1e24", fg="#ffffff", bd=0, insertbackground="white")
-        self.ent_path.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4, pady=2)
-        ttk.Button(path_frame, text="Browse", style="Secondary.TButton", command=self.browse_dir).pack(side=tk.RIGHT, padx=(5, 0))
+        # Root Path
+        tk.Label(main_frame, text="Target Project Root Directory:", fg="#b0b0b8", bg="#121214").pack(anchor=tk.W, pady=(0, 5))
+        p_frame = tk.Frame(main_frame, bg="#121214")
+        p_frame.pack(fill=tk.X, pady=(0, 15))
         
-        grid_frame = ttk.Frame(main_frame)
-        grid_frame.pack(fill=tk.X, pady=10)
+        self.ent_path = tk.Entry(p_frame, bg="#1e1e24", fg="#ffffff", bd=1, relief="flat", insertbackground="white")
+        self.ent_path.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4)
         
-        ttk.Label(grid_frame, text="Project Name:").grid(row=0, column=0, sticky=tk.W, pady=4)
-        self.ent_movie = tk.Entry(grid_frame, bg="#1e1e24", fg="#ffffff", bd=0, insertbackground="white")
-        self.ent_movie.grid(row=0, column=1, sticky=tk.EW, padx=(5, 20), ipady=4)
+        tk.Button(
+            p_frame, text="Browse", bg="#2d2d34", fg="white", 
+            relief="flat", activebackground="#3e3e46", activeforeground="white",
+            command=self.browse_dir
+        ).pack(side=tk.RIGHT, padx=(5, 0))
         
-        ttk.Label(grid_frame, text="Reel Number:").grid(row=0, column=2, sticky=tk.W, pady=4)
-        self.ent_reel = tk.Entry(grid_frame, bg="#1e1e24", fg="#ffffff", bd=0, insertbackground="white")
-        self.ent_reel.grid(row=0, column=3, sticky=tk.EW, ipady=4)
+        # Grid fields
+        g_frame = tk.Frame(main_frame, bg="#121214")
+        g_frame.pack(fill=tk.X, pady=5)
         
-        ttk.Label(grid_frame, text="Characters (comma separated):").grid(row=1, column=0, sticky=tk.W, pady=8)
-        self.ent_chars = tk.Entry(grid_frame, bg="#1e1e24", fg="#ffffff", bd=0, insertbackground="white")
-        self.ent_chars.grid(row=1, column=1, sticky=tk.EW, padx=(5, 20), ipady=4)
+        fields = [
+            ("Project Name:", "movie"), 
+            ("Reel Number:", "reel"), 
+            ("Characters (comma sep):", "chars"), 
+            ("Number of Scenes:", "scenes")
+        ]
         
-        ttk.Label(grid_frame, text="Number of Scenes:").grid(row=1, column=2, sticky=tk.W, pady=8)
-        self.ent_scenes = tk.Entry(grid_frame, bg="#1e1e24", fg="#ffffff", bd=0, insertbackground="white")
-        self.ent_scenes.grid(row=1, column=3, sticky=tk.EW, ipady=4)
-        
-        grid_frame.columnconfigure(1, weight=1)
-        grid_frame.columnconfigure(3, weight=1)
-        
-        btn_frame = ttk.Frame(main_frame)
-        btn_frame.pack(fill=tk.X, pady=15)
-        
-        ttk.Button(btn_frame, text="Mode A: [All Structure]", style="Action.TButton", command=lambda: self.generate_structure("all")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
-        ttk.Button(btn_frame, text="Mode B: [Exports Only]", style="Secondary.TButton", command=lambda: self.generate_structure("exports")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
-        ttk.Button(btn_frame, text="Mode C: [Character Exports Only]", style="Secondary.TButton", command=lambda: self.generate_structure("characters")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        self.entries = {}
+        for i, (label_text, key) in enumerate(fields):
+            row = i // 2
+            col = (i % 2) * 2
+            tk.Label(g_frame, text=label_text, fg="#b0b0b8", bg="#121214").grid(row=row, column=col, sticky=tk.W, pady=5, padx=(5 if col > 0 else 0, 5))
+            ent = tk.Entry(g_frame, bg="#1e1e24", fg="#ffffff", bd=1, relief="flat", insertbackground="white")
+            ent.grid(row=row, column=col + 1, sticky=tk.EW, pady=5, ipady=4)
+            g_frame.columnconfigure(col + 1, weight=1)
+            self.entries[key] = ent
 
-        sep = ttk.Separator(main_frame, orient='horizontal')
-        sep.pack(fill=tk.X, pady=10)
+        # Action Buttons
+        b_frame = tk.Frame(main_frame, bg="#121214")
+        b_frame.pack(fill=tk.X, pady=20)
+        
+        tk.Button(
+            b_frame, text="Mode A: [All Structure]", bg="#007acc", fg="white", 
+            relief="flat", activebackground="#0098ff", activeforeground="white",
+            command=lambda: self.generate_structure("all")
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2, ipady=5)
+        
+        tk.Button(
+            b_frame, text="Mode B: [Exports Only]", bg="#2d2d34", fg="white", 
+            relief="flat", activebackground="#3e3e46", activeforeground="white",
+            command=lambda: self.generate_structure("exports")
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2, ipady=5)
+        
+        tk.Button(
+            b_frame, text="Mode C: [Character Exports]", bg="#2d2d34", fg="white", 
+            relief="flat", activebackground="#3e3e46", activeforeground="white",
+            command=lambda: self.generate_structure("characters")
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2, ipady=5)
 
-        ttk.Label(main_frame, text="Quick Search (e.g., 'Char_A Scene 1')", font=("Segoe UI", 10, "bold")).pack(anchor=tk.W)
-        self.ent_search = tk.Entry(main_frame, bg="#1e1e24", fg="#ffffff", bd=0, insertbackground="white")
-        self.ent_search.pack(fill=tk.X, ipady=4, pady=5)
+        # Quick Renamer Activation Button (Zero background hooks)
+        tk.Button(
+            main_frame, text="⚡ Rename Selected Explorer File Now", bg="#28a745", fg="white", 
+            font=("Segoe UI", 10, "bold"), relief="flat", activebackground="#218838", activeforeground="white",
+            command=self.manual_rename_trigger
+        ).pack(fill=tk.X, pady=10, ipady=6)
+
+        # Quick Search
+        tk.Label(main_frame, text="Quick Search Folders:", fg="#b0b0b8", bg="#121214").pack(anchor=tk.W, pady=(15, 5))
+        self.ent_search = tk.Entry(main_frame, bg="#1e1e24", fg="#ffffff", bd=1, relief="flat", insertbackground="white")
+        self.ent_search.pack(fill=tk.X, ipady=4, pady=(0, 5))
         self.ent_search.bind("<KeyRelease>", self.update_search)
         
-        self.listbox = tk.Listbox(main_frame, bg="#1e1e24", fg="#ffffff", selectbackground="#007acc", selectforeground="white", bd=0, highlightthickness=0)
-        self.listbox.pack(fill=tk.BOTH, expand=True, pady=2)
-        self.listbox.bind("<Double-Button-1>", self.open_selected_search_path)
-        self.listbox.bind("<Return>", self.open_selected_search_path)
+        # Results frame and Listbox with Scrollbar
+        list_frame = tk.Frame(main_frame, bg="#1e1e24")
+        list_frame.pack(fill=tk.BOTH, expand=True)
+        
+        scrollbar = tk.Scrollbar(list_frame, orient="vertical", width=12)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.listbox = tk.Listbox(
+            list_frame, bg="#1e1e24", fg="#ffffff", bd=0, highlightthickness=0,
+            selectbackground="#007acc", selectforeground="white", yscrollcommand=scrollbar.set
+        )
+        self.listbox.pack(fill=tk.BOTH, expand=True, padx=(8, 0), pady=6)
+        scrollbar.config(command=self.listbox.yview)
+        
+        self.listbox.bind("<Double-Button-1>", self.open_search_path)
+        self.listbox.bind("<Return>", self.open_search_path)
 
     def browse_dir(self):
         selected = filedialog.askdirectory()
@@ -405,36 +403,42 @@ class SyncFlowApp:
             self.ent_path.delete(0, tk.END)
             self.ent_path.insert(0, selected)
 
-    def get_inputs(self):
-        return {
-            "root": self.ent_path.get().strip(),
-            "movie": self.ent_movie.get().strip().replace(" ", "_"),
-            "reel": f"Reel_{int(r):02d}" if (r := self.ent_reel.get().strip()).isdigit() else r.replace(" ", "_"),
-            "characters": [c.strip() for c in self.ent_chars.get().split(",") if c.strip()],
-            "scenes": int(s) if (s := self.ent_scenes.get().strip()).isdigit() else 0
-        }
+    def manual_rename_trigger(self):
+        paths = get_selected_file_paths()
+        if not paths:
+            messagebox.showinfo("Info", "No file selected in Windows Explorer / Mac Finder. Click on a file first!")
+            return
+        context = parse_context_from_path(paths[0])
+        if context:
+            RenameOverlay(self.root, context)
+        else:
+            messagebox.showwarning("Structure Error", "The selected file is not inside a proper 'Character Exports' folder structure.")
 
     def generate_structure(self, mode):
-        inputs = self.get_inputs()
-        if not inputs["root"] or not os.path.exists(inputs["root"]):
-            messagebox.showerror("Error", "Please input a valid Root Directory Path.")
+        root_dir = self.ent_path.get().strip()
+        if not root_dir or not os.path.exists(root_dir):
+            messagebox.showerror("Error", "Valid Root Directory Required.")
             return
             
-        root_dir = Path(inputs["root"])
-        movie = inputs["movie"]
-        reel = inputs["reel"]
-        
+        root_path = Path(root_dir)
+        movie = self.entries["movie"].get().strip().replace(" ", "_")
+        r_val = self.entries["reel"].get().strip()
+        reel = f"Reel_{int(r_val):02d}" if r_val.isdigit() else r_val.replace(" ", "_")
+        chars = [c.strip() for c in self.entries["chars"].get().split(",") if c.strip()]
+        s_val = self.entries["scenes"].get().strip()
+        scenes = int(s_val) if s_val.isdigit() else 0
+
         # Smart Folder Resolver: If the target path doesn't end with Movie/Reel, we build a subfolder structure
-        if root_dir.name == reel and root_dir.parent.name == movie:
-            project_root = root_dir
-        elif root_dir.name == movie:
-            project_root = root_dir / reel
+        if root_path.name == reel and root_path.parent.name == movie:
+            project_root = root_path
+        elif root_path.name == movie:
+            project_root = root_path / reel
         else:
             if not movie or not reel:
                 messagebox.showerror("Error", "Project Name and Reel Number are required to generate root folders.")
                 return
-            project_root = root_dir / movie / reel
-            
+            project_root = root_path / movie / reel
+
         try:
             # Mode A: Generates the core macro structure at the root project folder
             if mode == "all":
@@ -452,84 +456,62 @@ class SyncFlowApp:
                 ]
                 for folder in macro_dirs:
                     os.makedirs(project_root / folder, exist_ok=True)
-                    
+
             # Mode B: If the project framework already exists, explicitly initializes standard delivery directories
             if mode in ("all", "exports"):
                 exports_subdirs = ["Raw Exports", "Source Exports", "Test"]
-                # We initialize standard delivery folders in both direct Exports and Projects/Media/Exports
                 for sub in exports_subdirs:
                     os.makedirs(project_root / "Projects/Media/Exports" / sub, exist_ok=True)
                     os.makedirs(project_root / "Exports" / sub, exist_ok=True)
-                    
+
             # Mode C: Under Character Exports, builds character directories, scene folders, and 5 format subfolders
             if mode in ("all", "characters"):
-                if not inputs["characters"] or inputs["scenes"] <= 0:
-                    messagebox.showerror("Error", "Character names and a valid total Scene count are required for this action.")
+                if not chars or scenes <= 0:
+                    messagebox.showerror("Error", "Character names and a valid total Scene count are required.")
                     return
                 
-                # To be robust, we populate folders in multiple possible layout standards
                 char_bases = [
                     project_root / "Projects/Media/Character Exports",
                     project_root / "Character Exports",
                     project_root / "Exports/Character Exports"
                 ]
                 formats = ["MP4", "Quicktime", "SyncSO", "Lipdub", "Audio"]
+                padding_width = max(2, len(str(scenes)))
                 
-                # Dynamic zero-padding width based on scene count
-                padding_width = max(2, len(str(inputs["scenes"])))
-                
-                for char in inputs["characters"]:
-                    for s_num in range(1, inputs["scenes"] + 1):
-                        scene_folder_name = f"Scene_{s_num:0{padding_width}d}"
+                for char in chars:
+                    for s in range(1, scenes + 1):
+                        scene_folder_name = f"Scene_{s:0{padding_width}d}"
                         for base in char_bases:
                             for fmt in formats:
                                 os.makedirs(base / char / scene_folder_name / fmt, exist_ok=True)
-                                
-            messagebox.showinfo("Success", f"Structure built successfully via Mode: {mode.upper()}\nProject Path: {project_root}")
+
+            messagebox.showinfo("Success", f"Folders deployed successfully!\nProject Path: {project_root}")
             self.update_search()
         except Exception as e:
-            messagebox.showerror("Failure", f"An unexpected error occurred:\n{e}")
+            messagebox.showerror("Failure", str(e))
 
     def update_search(self, event=None):
         query = self.ent_search.get().strip().lower()
         root_dir = self.ent_path.get().strip()
         self.listbox.delete(0, tk.END)
-        
         if not root_dir or not os.path.exists(root_dir):
             return
-            
-        query_words = query.split()
-        match_count = 0
         
-        for root, dirs, files in os.walk(root_dir):
+        words = query.split()
+        count = 0
+        for r, dirs, _ in os.walk(root_dir):
             for d in dirs:
-                full_path = os.path.join(root, d)
-                normalized_path = full_path.lower()
-                
-                if not query_words or all(word in normalized_path for word in query_words):
-                    self.listbox.insert(tk.END, full_path)
-                    match_count += 1
-                    if match_count >= 150:
+                fp = os.path.join(r, d)
+                if not words or all(w in fp.lower() for w in words):
+                    self.listbox.insert(tk.END, fp)
+                    count += 1
+                    if count >= 150:
                         return
 
-    def open_selected_search_path(self, event=None):
-        selection = self.listbox.get(tk.ACTIVE)
-        if selection and os.path.exists(selection):
-            open_in_file_manager(selection)
-
-    def handle_global_rename_trigger(self):
-        self.root.after(0, self.execute_rename_popup_flow)
-
-    def execute_rename_popup_flow(self):
-        paths = get_selected_file_paths()
-        if not paths:
-            return
-            
-        target_file = paths[0]
-        context = parse_context_from_path(target_file)
-        
-        if context:
-            RenameOverlay(self.root, context)
+    def open_search_path(self, event=None):
+        sel = self.listbox.get(tk.ACTIVE)
+        if sel:
+            open_in_file_manager(sel)
 
 if __name__ == "__main__":
     root = tk.Tk()
