@@ -10,3 +10,8 @@ __pycache__/
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Local backup / scratch artifacts
+*.bak
+nul
+%TEMP%*
