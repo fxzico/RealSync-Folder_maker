@@ -22,3 +22,6 @@ nul
 *.xlsx
 PRD/
 Make folders.md
+
+# Release binaries live in GitHub Releases, not the repo
+*.exe
