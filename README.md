@@ -1,47 +1,80 @@
 # SyncFlow Automator
 
-A lightweight, cross-platform desktop utility built with a native Python Tkinter GUI to automate deep-nested directory structures and run global shortcut-based renaming actions for post-production syncing pipelines.
+A lightweight, **100% offline** desktop utility for video post-production teams. One app, two jobs:
 
-## 🚀 Core Functionalities
+1. **Folder pipelines** — instantly deploy deep character/scene/format directory structures and rename export files based on their folder context.
+2. **Translation QC** *(new in v1.2)* — check whether an OST sheet's translations are actually translated (not just copied English), and get back a colour-coded Excel review copy. Flag-only: your files are never modified.
 
-* **Mode A [All Structure]:** Instantly Deploys micro studio pipelines (`/Projects`, `/Media`, `/Exports`, etc.) in the target directory.
-* **Mode C [Character Exports]:** Generates zero-padded sequence folders (`Scene_01`, `Scene_02`) dynamically across custom character arrays, creating target format subfolders (`MP4`, `Quicktime`, `SyncSO`, `Lipdub`, `Audio`).
-* **Explorer Selected File Renaming:** Highlight any asset inside Windows Explorer or Mac Finder and click the **⚡ Rename Selected Explorer File Now** button in the app to instantly open a sleek, context-aware prompt to enter the **Shot Number** (bypassing laggy background global keyboard hooks).
-* **Integrated Jump Search:** Live, recursive search filter allowing post-production editors to navigate directly into deeply nested character paths instantaneously.
+No internet connection is used or required. Ever.
 
-## 📸 Interface Walkthrough
+## 📥 Install (for editors — no technical setup)
 
-### Main Configuration Grid
-![Main GUI Workspace](screenshots/main_interface.png)
+1. Go to the [**Releases page**](../../releases/latest).
+2. Download **`SyncFlow_Automator.exe`**.
+3. Double-click it. Done — no installer, no Python, no dependencies.
 
-### Selected File Context Overlay Prompt
-![Context Renamer Dialog](screenshots/overlay_popup.png)
+> Optional: put a `qc_allowlist.txt` next to the exe to extend the list of brand names allowed to stay identical in translations (one per line).
 
-## 🛠️ Compilation Blueprint
+## 🚀 Features
 
-### Windows (.exe)
-To compile the script on Windows, run:
+### Folders tab
+* **Mode A [All Structure]** — deploys the full project ecosystem (`/Projects`, `/Media`, `/Exports`, …).
+* **Mode B [Exports Only]** — delivery directories only.
+* **Mode C [Character Exports]** — zero-padded `Scene_01…N` folders per character, each with `MP4 / Quicktime / SyncSO / Lipdub / Audio`.
+* **⚡ Context rename** — select an export file in Explorer/Finder, click once, type the shot number: the file is renamed to spec from its own path. One-step **Undo** included.
+* **Quick search** — instant, background-threaded filter over the whole project tree.
+
+### Translation QC tab (new)
+* Pick an OST `.csv` (Deepdub-style exports supported; encoding auto-detected, cp1252 included).
+* Choose the language pair — **English ⇄ Latin-American Spanish** ships now, both directions (⇄ swap button). More languages are config entries, not code.
+* Press **Run** → get a colour-coded **Excel copy** next to your sheet:
+  * 🔴 **Red** — translation missing, or English left untranslated
+  * 🟡 **Yellow** — verify (identical brand names, partial overlaps)
+  * 🟢 **Green** — properly translated
+  * 🔵 **Blue** — the on-screen text is *already* in the target language (burned-in video text), shown as a linked source+translation pair
+* **Flag-only guarantee:** the source sheet is read-only — byte-identical after every run.
+* Scales to ~50k rows without freezing (background thread + memoized verdicts).
+
+## 🖥️ Run from source
+
 ```bash
-pip install pyinstaller
-pyinstaller --noconsole --onefile --name="SyncFlow_Automator" main.py
+pip install -r requirements.txt   # just openpyxl, for the Excel export
+python main.py
 ```
-The standalone binary will generate inside the local `/dist/` workspace folder as `SyncFlow_Automator.exe`.
 
-### macOS (.app / .dmg)
-To compile a native macOS application bundle and package it into a mounting disk image (`.dmg`), run on a Mac machine:
+Headless engine (no GUI) for pipelines:
+
 ```bash
-# 1. Compile the script into a native macOS App bundle
-pip install pyinstaller
-pyinstaller --noconsole --onefile --name="SyncFlow_Automator" main.py
-
-# 2. Package the compiled app directly into a mounting installer (.dmg)
-hdiutil create -format UDZO -srcfolder dist/SyncFlow_Automator.app dist/SyncFlow_Automator.dmg
+python translation_qc.py "sheet.csv" --source en --target es
 ```
-The standalone files will generate inside the `/dist/` workspace folder.
 
-> [!TIP]
-> **macOS Running Option (Quick Handover):** If a compiled `.dmg` installer is not attached to the release, Mac editors can run the utility natively from source (no external dependencies required). Simply execute:
-> ```bash
-> python main.py
-> ```
+## 🧪 Tests
 
+```bash
+python test_syncflow.py         # folder/rename logic  (11 checks)
+python test_translation_qc.py   # QC engine golden set (synthetic data only)
+```
+
+## 🛠️ Build the exe yourself
+
+```bash
+pip install pyinstaller openpyxl
+pyinstaller --noconsole --onefile --name="SyncFlow_Automator" main.py
+# -> dist/SyncFlow_Automator.exe
+```
+
+macOS: same command produces `SyncFlow_Automator.app`; package with
+`hdiutil create -format UDZO -srcfolder dist/SyncFlow_Automator.app dist/SyncFlow_Automator.dmg`,
+or simply run `python main.py` from source (Translation QC export needs `pip install openpyxl`).
+
+## 📁 Repo layout
+
+| File | Purpose |
+|---|---|
+| `main.py` | The desktop app (Folders + Translation QC tabs) |
+| `translation_qc.py` | Offline QC engine + CLI (importable, zero networking) |
+| `qc_allowlist.txt` | Brand/proper-noun terms allowed to stay identical |
+| `test_syncflow.py` / `test_translation_qc.py` | Headless test suites |
+| `build_deck.py` | Regenerates the product pitch deck |
+
+*Privacy note: client OST sheets and generated QC workbooks are gitignored — no client content lives in this repository; tests use synthetic data only.*

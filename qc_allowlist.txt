@@ -1,0 +1,15 @@
+# SyncFlow Automator - Translation QC allowlist
+# One term per line. Terms listed here are allowed to stay IDENTICAL between
+# the original and the translation (brands, tickers, proper nouns, show names).
+# Lines starting with # are comments. Case-insensitive.
+SAMSUNG
+SK hynix
+Nasdaq
+KOSPI
+OpenAI
+Bloomberg
+COMPUTEX
+S&P 500
+YouTube
+NVIDIA
+HYPERDRIVE
