@@ -12,7 +12,13 @@ from tkinter import ttk, messagebox, filedialog
 # ==========================================
 
 APP_NAME = "SyncFlow Automator"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
+
+# Translation QC engine (optional: app still works without it)
+try:
+    import translation_qc as tqc
+except Exception:
+    tqc = None
 
 # Format subfolders created inside every scene folder.
 FORMAT_FOLDERS = ["MP4", "Quicktime", "SyncSO", "Lipdub", "Audio"]
@@ -347,22 +353,59 @@ class SyncFlowApp:
     def __init__(self, root):
         self.root = root
         self.root.title(f"{APP_NAME}  v{APP_VERSION}")
-        self.root.geometry("680x600")
+        self.root.geometry("680x640")
         self.root.configure(bg="#121214")
 
         # State
         self._folder_cache = []    # cached folder paths for instant search
         self._search_job = None    # debounce handle
         self.last_rename = None     # (new_path, old_path) for one-step undo
+        self.qc_running = False
 
-        self.build_clean_ui()
+        self.build_tabbed_ui()
         self.load_settings()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         if self.ent_path.get().strip():
             self._rebuild_cache()
 
+    # ---------- Tab switcher (Folders view = original UI, untouched) ----------
+
+    def build_tabbed_ui(self):
+        tab_bar = tk.Frame(self.root, bg="#121214")
+        tab_bar.pack(fill=tk.X, padx=20, pady=(14, 0))
+
+        self.btn_tab_folders = tk.Button(
+            tab_bar, text="  Folders  ", relief="flat", bd=0, font=("Segoe UI", 10, "bold"),
+            command=lambda: self.show_tab("folders"))
+        self.btn_tab_folders.pack(side=tk.LEFT)
+
+        self.btn_tab_qc = tk.Button(
+            tab_bar, text="  Translation QC  ", relief="flat", bd=0, font=("Segoe UI", 10, "bold"),
+            command=lambda: self.show_tab("qc"))
+        self.btn_tab_qc.pack(side=tk.LEFT, padx=(6, 0))
+
+        self.folders_frame = tk.Frame(self.root, bg="#121214")
+        self.qc_frame = tk.Frame(self.root, bg="#121214")
+
+        self.build_clean_ui()   # original folder UI builds into self.folders_frame
+        self.build_qc_ui()
+        self.show_tab("folders")
+
+    def show_tab(self, which):
+        active, inactive = ("#007acc", "white"), ("#1e1e24", "#8a8a92")
+        if which == "folders":
+            self.qc_frame.pack_forget()
+            self.folders_frame.pack(fill=tk.BOTH, expand=True)
+            self.btn_tab_folders.config(bg=active[0], fg=active[1], activebackground=active[0], activeforeground="white")
+            self.btn_tab_qc.config(bg=inactive[0], fg=inactive[1], activebackground="#2d2d34", activeforeground="white")
+        else:
+            self.folders_frame.pack_forget()
+            self.qc_frame.pack(fill=tk.BOTH, expand=True)
+            self.btn_tab_qc.config(bg=active[0], fg=active[1], activebackground=active[0], activeforeground="white")
+            self.btn_tab_folders.config(bg=inactive[0], fg=inactive[1], activebackground="#2d2d34", activeforeground="white")
+
     def build_clean_ui(self):
-        main_frame = tk.Frame(self.root, bg="#121214", padx=20, pady=20)
+        main_frame = tk.Frame(self.folders_frame, bg="#121214", padx=20, pady=20)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         # Root Path
@@ -585,6 +628,152 @@ class SyncFlowApp:
         except Exception as e:
             messagebox.showerror("Failure", str(e))
 
+    # ---------- Translation QC tab (PRD/PRD_2_AI_Implementation.md §6) ----------
+
+    def build_qc_ui(self):
+        f = tk.Frame(self.qc_frame, bg="#121214", padx=20, pady=20)
+        f.pack(fill=tk.BOTH, expand=True)
+
+        tk.Label(f, text="OST Sheet (.csv):", fg="#b0b0b8", bg="#121214").pack(anchor=tk.W, pady=(0, 5))
+        row1 = tk.Frame(f, bg="#121214")
+        row1.pack(fill=tk.X, pady=(0, 12))
+        self.qc_ent_file = tk.Entry(row1, bg="#1e1e24", fg="#ffffff", bd=1, relief="flat", insertbackground="white")
+        self.qc_ent_file.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4)
+        tk.Button(row1, text="Browse", bg="#2d2d34", fg="white", relief="flat",
+                  activebackground="#3e3e46", activeforeground="white",
+                  command=self.qc_browse_file).pack(side=tk.RIGHT, padx=(5, 0))
+
+        row2 = tk.Frame(f, bg="#121214")
+        row2.pack(fill=tk.X, pady=(0, 12))
+        tk.Label(row2, text="Source language:", fg="#b0b0b8", bg="#121214").pack(side=tk.LEFT)
+        langs = list(tqc.LANG_PROFILES.keys()) if tqc else ["en", "es"]
+        self.qc_src_lang = tk.StringVar(value="en")
+        self.qc_tgt_lang = tk.StringVar(value="es")
+        ttk.Combobox(row2, textvariable=self.qc_src_lang, values=langs, width=6,
+                     state="readonly").pack(side=tk.LEFT, padx=(6, 14))
+        tk.Button(row2, text="⇄ Swap", bg="#2d2d34", fg="white", relief="flat",
+                  activebackground="#3e3e46", activeforeground="white",
+                  command=self.qc_swap_langs).pack(side=tk.LEFT, padx=(0, 14))
+        tk.Label(row2, text="Target language:", fg="#b0b0b8", bg="#121214").pack(side=tk.LEFT)
+        ttk.Combobox(row2, textvariable=self.qc_tgt_lang, values=langs, width=6,
+                     state="readonly").pack(side=tk.LEFT, padx=(6, 0))
+
+        self.qc_btn_run = tk.Button(
+            f, text="▶ Run Translation QC", bg="#007acc", fg="white",
+            font=("Segoe UI", 10, "bold"), relief="flat",
+            activebackground="#0098ff", activeforeground="white", command=self.qc_run)
+        self.qc_btn_run.pack(fill=tk.X, pady=(4, 4), ipady=6)
+
+        self.qc_lbl_status = tk.Label(f, text="Pick a sheet and press Run. The source file is never modified.",
+                                      fg="#8a8a92", bg="#121214", anchor=tk.W, justify=tk.LEFT)
+        self.qc_lbl_status.pack(fill=tk.X, pady=(4, 8))
+
+        # Results summary area
+        self.qc_results = tk.Frame(f, bg="#1e1e24")
+        self.qc_results.pack(fill=tk.BOTH, expand=True)
+        self.qc_txt = tk.Text(self.qc_results, bg="#1e1e24", fg="#e6e6e6", bd=0,
+                              highlightthickness=0, font=("Consolas", 10), state=tk.DISABLED, wrap="word")
+        self.qc_txt.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        for tag, color in (("HIGH", "#ff6b6b"), ("MEDIUM", "#f5a623"), ("LOW", "#e8d06c"),
+                           ("PASS", "#5dd879"), ("NOTE", "#66aaff"), ("HDR", "#ffffff")):
+            self.qc_txt.tag_configure(tag, foreground=color)
+
+        self.qc_btn_open = tk.Button(
+            f, text="📂 Open Highlighted Excel", bg="#28a745", fg="white",
+            font=("Segoe UI", 10, "bold"), relief="flat", state=tk.DISABLED,
+            activebackground="#218838", activeforeground="white", command=self.qc_open_result)
+        self.qc_btn_open.pack(fill=tk.X, pady=(8, 0), ipady=5)
+        self.qc_last_out = None
+
+    def qc_browse_file(self):
+        sel = filedialog.askopenfilename(filetypes=[("CSV sheets", "*.csv"), ("All files", "*.*")])
+        if sel:
+            self.qc_ent_file.delete(0, tk.END)
+            self.qc_ent_file.insert(0, sel)
+
+    def qc_swap_langs(self):
+        s, t = self.qc_src_lang.get(), self.qc_tgt_lang.get()
+        self.qc_src_lang.set(t)
+        self.qc_tgt_lang.set(s)
+
+    def _qc_log(self, text, tag=None):
+        self.qc_txt.config(state=tk.NORMAL)
+        self.qc_txt.insert(tk.END, text, tag or ())
+        self.qc_txt.config(state=tk.DISABLED)
+        self.qc_txt.see(tk.END)
+
+    def qc_run(self):
+        if tqc is None:
+            messagebox.showerror("Unavailable", "translation_qc module not found next to the app.")
+            return
+        if self.qc_running:
+            return
+        path = self.qc_ent_file.get().strip()
+        if not path or not os.path.isfile(path):
+            messagebox.showerror("Error", "Pick a valid .csv sheet first.")
+            return
+        src, tgt = self.qc_src_lang.get(), self.qc_tgt_lang.get()
+        if src == tgt:
+            messagebox.showerror("Error", "Source and target language must differ.")
+            return
+
+        self.qc_running = True
+        self.qc_btn_run.config(state=tk.DISABLED, text="Running…")
+        self.qc_btn_open.config(state=tk.DISABLED)
+        self.qc_txt.config(state=tk.NORMAL); self.qc_txt.delete("1.0", tk.END); self.qc_txt.config(state=tk.DISABLED)
+        self.qc_lbl_status.config(text="Analysing…")
+
+        def progress(done, total):
+            self.root.after(0, lambda: self.qc_lbl_status.config(text=f"Analysing… {done}/{total} rows"))
+
+        def worker():
+            try:
+                tqc.load_allowlist_file(os.path.join(tqc.app_dir(), "qc_allowlist.txt"))
+                res = tqc.run_qc(path, src, tgt, progress_cb=progress)
+                self.root.after(0, lambda: self._qc_done(res))
+            except SystemExit as e:
+                self.root.after(0, lambda: self._qc_fail(str(e)))
+            except Exception as e:
+                self.root.after(0, lambda: self._qc_fail(str(e)))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _qc_fail(self, msg):
+        self.qc_running = False
+        self.qc_btn_run.config(state=tk.NORMAL, text="▶ Run Translation QC")
+        self.qc_lbl_status.config(text="Failed.")
+        messagebox.showerror("Translation QC failed", msg)
+
+    def _qc_done(self, res):
+        self.qc_running = False
+        self.qc_btn_run.config(state=tk.NORMAL, text="▶ Run Translation QC")
+        self.qc_last_out = res["out"]
+        self.qc_btn_open.config(state=tk.NORMAL)
+        total = len(res["results"])
+        sev = res["severity"]
+        flagged = sev.get("HIGH", 0) + sev.get("MEDIUM", 0)
+        self.qc_lbl_status.config(text=f"Done - {total} rows analysed. Source file untouched.")
+
+        self._qc_log("RESULT SUMMARY\n", "HDR")
+        self._qc_log(f"  Rows analysed : {total}\n")
+        order = [("HIGH", "fix these"), ("MEDIUM", "likely wrong language"),
+                 ("LOW", "quick eyeball"), ("NOTE", "source already target-lang (blue)"),
+                 ("PASS", "translated correctly")]
+        for k, hint in order:
+            n = sev.get(k, 0)
+            if k == "NOTE":
+                n = res["src_notes"] if res["src_notes"] else sev.get("NOTE", 0)
+            if n:
+                self._qc_log(f"  {k:<7}: {n:>5}   ({hint})\n", k)
+        self._qc_log(f"\n  Action needed (High+Medium): {flagged} row(s)\n",
+                     "HIGH" if flagged else "PASS")
+        self._qc_log("\n  Verdicts: " + ", ".join(f"{k}={v}" for k, v in sorted(res["verdicts"].items())) + "\n")
+        self._qc_log(f"\n  Highlighted Excel:\n  {res['out']}\n", "HDR")
+
+    def qc_open_result(self):
+        if self.qc_last_out and os.path.exists(self.qc_last_out):
+            open_in_file_manager(self.qc_last_out)
+
     # ---------- Quick search (debounced + off the UI thread) ----------
 
     def _schedule_search(self, event=None):
@@ -643,6 +832,13 @@ class SyncFlowApp:
                 for key in ("movie", "reel", "chars", "scenes"):
                     if data.get(key):
                         self.entries[key].insert(0, data[key])
+                qc = data.get("qc") or {}
+                if qc.get("src"):
+                    self.qc_src_lang.set(qc["src"])
+                if qc.get("tgt"):
+                    self.qc_tgt_lang.set(qc["tgt"])
+                if qc.get("file"):
+                    self.qc_ent_file.insert(0, qc["file"])
         except Exception:
             pass
 
@@ -654,6 +850,11 @@ class SyncFlowApp:
                 "reel": self.entries["reel"].get().strip(),
                 "chars": self.entries["chars"].get().strip(),
                 "scenes": self.entries["scenes"].get().strip(),
+                "qc": {
+                    "src": self.qc_src_lang.get(),
+                    "tgt": self.qc_tgt_lang.get(),
+                    "file": self.qc_ent_file.get().strip(),
+                },
             }
             SETTINGS_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
         except Exception:

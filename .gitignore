@@ -15,3 +15,10 @@ Thumbs.db
 *.bak
 nul
 %TEMP%*
+
+# Client content & QC outputs must NEVER reach the public repo
+*.csv
+*_QC_highlighted.xlsx
+*.xlsx
+PRD/
+Make folders.md
