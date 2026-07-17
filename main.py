@@ -12,7 +12,7 @@ from tkinter import ttk, messagebox, filedialog
 # ==========================================
 
 APP_NAME = "SyncFlow Automator"
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1"
 
 # Translation QC engine (optional: app still works without it)
 try:
@@ -397,6 +397,21 @@ class SyncFlowApp:
                   foreground=[("selected", "#ffffff")])
         style.configure("TCombobox", fieldbackground="#1e1e24", background="#2d2d34",
                         foreground="#ffffff", arrowcolor="#ffffff")
+        # Our comboboxes are state="readonly", and clam swaps in a LIGHT field
+        # background for that state while the foreground stays white - the
+        # language names were invisible (client feedback round 5). Pin every
+        # relevant state explicitly.
+        style.map("TCombobox",
+                  fieldbackground=[("readonly", "#1e1e24"), ("disabled", "#1e1e24")],
+                  foreground=[("readonly", "#ffffff"), ("disabled", "#6a6a72")],
+                  selectbackground=[("readonly", "#1e1e24")],
+                  selectforeground=[("readonly", "#ffffff")],
+                  background=[("readonly", "#2d2d34")])
+        # The dropdown list itself is a plain Tk listbox configured via option DB.
+        self.root.option_add("*TCombobox*Listbox.background", "#1e1e24")
+        self.root.option_add("*TCombobox*Listbox.foreground", "#ffffff")
+        self.root.option_add("*TCombobox*Listbox.selectBackground", "#007acc")
+        self.root.option_add("*TCombobox*Listbox.selectForeground", "#ffffff")
 
     # ---------- Tab switcher (Folders view = original UI, untouched) ----------
 
@@ -663,7 +678,7 @@ class SyncFlowApp:
     # Language dropdowns show full names (client feedback round 4), engine
     # keeps using ISO codes. Names come from the engine's LANG_PROFILES so
     # adding a language there automatically surfaces here.
-    _FALLBACK_LANG_NAMES = {"en": "English", "es": "Spanish (es-419)"}
+    _FALLBACK_LANG_NAMES = {"en": "English", "es": "Spanish (Latin America)"}
 
     def _lang_maps(self):
         if tqc:
@@ -705,11 +720,13 @@ class SyncFlowApp:
         row3.pack(fill=tk.X, pady=(4, 4))
         self.qc_btn_run = tk.Button(
             row3, text="▶ Run Translation QC", bg="#007acc", fg="white",
+            disabledforeground="#8a8a92",
             font=("Segoe UI", 10, "bold"), relief="flat",
             activebackground="#0098ff", activeforeground="white", command=self.qc_run)
         self.qc_btn_run.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=6)
         self.qc_btn_clear = tk.Button(
             row3, text="🗑 Clear", bg="#2d2d34", fg="white",
+            disabledforeground="#8a8a92",
             font=("Segoe UI", 10, "bold"), relief="flat",
             activebackground="#3e3e46", activeforeground="white", command=self.qc_clear)
         self.qc_btn_clear.pack(side=tk.LEFT, padx=(6, 0), ipady=6, ipadx=8)
@@ -734,7 +751,8 @@ class SyncFlowApp:
             selectcolor="#1e1e24", state=tk.DISABLED)
         self.qc_chk_flagged.pack(side=tk.LEFT)
         self.qc_btn_open = tk.Button(
-            bottom, text="📂 Open Highlighted Excel", bg="#28a745", fg="white",
+            bottom, text="📂 Open Highlighted Excel", bg="#2d2d34", fg="#8a8a92",
+            disabledforeground="#8a8a92",
             font=("Segoe UI", 10, "bold"), relief="flat", state=tk.DISABLED,
             activebackground="#218838", activeforeground="white", command=self.qc_open_result)
         self.qc_btn_open.pack(side=tk.RIGHT, ipady=4, ipadx=8)
@@ -781,6 +799,15 @@ class SyncFlowApp:
 
     GRID_MAX_ROWS = 5000           # in-app viewer cap; the Excel always has everything
 
+    # Disabled tk.Buttons keep their bright bg while the text goes system-gray
+    # (unreadable - client feedback round 5). Swap the full look with the state.
+    @staticmethod
+    def _set_btn_enabled(btn, enabled, bg, fg="white"):
+        if enabled:
+            btn.config(state=tk.NORMAL, bg=bg, fg=fg)
+        else:
+            btn.config(state=tk.DISABLED, bg="#2d2d34", fg="#8a8a92")
+
     def qc_browse_file(self):
         sel = filedialog.askopenfilename(filetypes=[
             ("OST sheets (CSV / Excel)", "*.csv *.xlsx *.xlsm"),
@@ -812,7 +839,7 @@ class SyncFlowApp:
         self.qc_tree.delete(*self.qc_tree.get_children())
         for w in self.qc_summary.winfo_children():
             w.destroy()
-        self.qc_btn_open.config(state=tk.DISABLED)
+        self._set_btn_enabled(self.qc_btn_open, False, "#28a745")
         self.qc_chk_flagged.config(state=tk.DISABLED)
         self.qc_lbl_status.config(text="Pick a sheet and press Run. The source file is never modified.")
 
@@ -835,9 +862,9 @@ class SyncFlowApp:
 
         self.qc_running = True
         self._qc_grid_gen += 1
-        self.qc_btn_run.config(state=tk.DISABLED, text="Running…")
-        self.qc_btn_clear.config(state=tk.DISABLED)
-        self.qc_btn_open.config(state=tk.DISABLED)
+        self.qc_btn_run.config(state=tk.DISABLED, text="Running…", bg="#2d2d34", fg="#8a8a92")
+        self._set_btn_enabled(self.qc_btn_clear, False, "#2d2d34")
+        self._set_btn_enabled(self.qc_btn_open, False, "#28a745")
         self.qc_chk_flagged.config(state=tk.DISABLED)
         self.qc_tree.delete(*self.qc_tree.get_children())
         for w in self.qc_summary.winfo_children():
@@ -861,8 +888,8 @@ class SyncFlowApp:
 
     def _qc_fail(self, msg):
         self.qc_running = False
-        self.qc_btn_run.config(state=tk.NORMAL, text="▶ Run Translation QC")
-        self.qc_btn_clear.config(state=tk.NORMAL)
+        self.qc_btn_run.config(state=tk.NORMAL, text="▶ Run Translation QC", bg="#007acc", fg="white")
+        self._set_btn_enabled(self.qc_btn_clear, True, "#2d2d34")
         self.qc_lbl_status.config(text="Failed.")
         messagebox.showerror("Translation QC failed", msg)
 
@@ -872,12 +899,12 @@ class SyncFlowApp:
 
     def _qc_done(self, res):
         self.qc_running = False
-        self.qc_btn_run.config(state=tk.NORMAL, text="▶ Run Translation QC")
-        self.qc_btn_clear.config(state=tk.NORMAL)
+        self.qc_btn_run.config(state=tk.NORMAL, text="▶ Run Translation QC", bg="#007acc", fg="white")
+        self._set_btn_enabled(self.qc_btn_clear, True, "#2d2d34")
         self.qc_chk_flagged.config(state=tk.NORMAL)
         self.qc_last_res = res
         self.qc_last_out = res["out"]
-        self.qc_btn_open.config(state=tk.NORMAL)
+        self._set_btn_enabled(self.qc_btn_open, True, "#28a745")
 
         sev = res["severity"]
         total = len(res["results"])

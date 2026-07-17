@@ -26,7 +26,7 @@ No internet connection is used or required. Ever.
 
 ### Translation QC tab (new)
 * Pick an OST sheet — **`.csv` or `.xlsx`** (Deepdub-style exports supported; CSV encoding auto-detected, cp1252 included; for Excel the first worksheet with the OST columns is used automatically).
-* Choose the language pair by full name — **English ⇄ Spanish (es-419)** ships now, both directions (⇄ swap button). More languages are config entries, not code.
+* Choose the language pair by full name — **English ⇄ Spanish (Latin America)** ships now, both directions (⇄ swap button). More languages are config entries, not code.
 * Press **Run** → results appear **inside the app** *(new in v1.4)*: a read-only, colour-coded grid with summary chips, a "flagged rows only" filter, and a **Clear** button to start over. The same colours are written to an **Excel copy** next to your sheet:
   * 🔴 **Red** — translation missing, or English left untranslated
   * 🟡 **Yellow** — verify (identical brand names, partial overlaps)

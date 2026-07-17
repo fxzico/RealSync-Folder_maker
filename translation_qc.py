@@ -54,7 +54,9 @@ LANG_PROFILES = {
                      "ally", "fully", "ship", "ward", "wards"),
     },
     "es": {
-        "name": "Spanish (es-419)",
+        # Client-facing name: this profile is tuned for LATIN-AMERICAN Spanish
+        # (es-419) - the OST pipeline's variant - not Castilian Spanish.
+        "name": "Spanish (Latin America)",
         "chars": set("áéíóúñ¿¡üÁÉÍÓÚÑÜ"),
         "stop": set((
             "el la los las un una unos unas de del al que en y o a con por para más como se su sus "
