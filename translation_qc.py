@@ -5,18 +5,17 @@ Reads an OST sheet (.csv or .xlsx), flags rows whose target cell is not a real
 translation (missing / untranslated copy / wrong language / verify), and writes
 a colour-coded Excel copy. The source file is NEVER modified.
 
-Implements the locked decisions (see PRD/PRD_2_AI_Implementation.md):
-  A. Zero-dependency heuristic language ID (EN vs es-419); pluggable interface.
-  B. Legitimately-identical cells (brands/numbers) -> low-severity "VERIFY".
-  C. Output: highlighted Excel copy.
-  D. Scale: up to ~50k rows (streamed read + memoized verdicts).
-  E. Source-language notes (client feedback round 2): flags rows whose SOURCE
-     cell already contains the target language (video burned-in text). The
-     source cell and the adjacent translated cell are shown in a new colour
-     (blue) so the pair is visually linked.
-  F. Input formats (client feedback round 3): .xlsx workbooks are accepted
-     alongside .csv - the first worksheet whose headers map both columns is
-     used, fully-empty padding rows are dropped.
+How it works:
+  - Zero-dependency heuristic language ID (stopwords + suffix morphology +
+    accented chars); swap the LanguageIdentifier class for a model later.
+  - Cells that legitimately stay identical (brands, tickers, numbers) get a
+    low-severity VERIFY instead of a false alarm; extend via qc_allowlist.txt.
+  - Rows whose SOURCE cell is already in the target language (text burned
+    into the video frame) are marked in blue as a linked pair - an identical
+    "translation" there is expected, not lazy copying.
+  - .xlsx input: the first worksheet whose headers map both OST columns is
+    used; empty padding rows are dropped.
+  - Scales to ~50k rows (verdicts memoized per unique cell pair).
 
 Usage:
   python translation_qc.py                       # auto-find a .csv/.xlsx in this folder
@@ -130,7 +129,7 @@ def _similarity(a, b):
 
 
 # Starter allowlist of brands / tickers / proper nouns that legitimately stay
-# identical across languages. In P1 this is a user-editable file (PRD Q-G).
+# identical across languages. Extended at runtime from qc_allowlist.txt.
 BRAND_ALLOWLIST = set(x.lower() for x in [
     "samsung", "nasdaq", "kospi", "openai", "hyperdrive", "sk hynix",
     "bloomberg", "computex", "s&p 500", "youtube", "nvidia", "kospi intraday",
@@ -174,9 +173,9 @@ def classify(source, target, li, source_lang="en", target_lang="es",
     if not t and not s:
         return Verdict("EMPTY_ROW", "INFO", 1.0, "und", "Both cells empty")
 
-    # --- Source-language note (client feedback): the video sometimes has
-    # target-language text burned into the frame, so the SOURCE cell itself
-    # is already in the target language. Detect it up front.
+    # --- Source-language note: the video sometimes has target-language text
+    # burned into the frame, so the SOURCE cell itself is already in the
+    # target language. Detect it up front.
     src_lang_det, src_conf = li.detect(s)
     src_flag = bool(s) and src_lang_det == target_lang and src_conf >= conf_floor
     tgt_name = LANG_PROFILES.get(target_lang, {}).get("name", target_lang)
@@ -417,9 +416,9 @@ def write_highlighted_xlsx(data, results, out_path, source_lang, target_lang):
             ws.cell(row=r, column=col).fill = fills[style]
             ws.cell(row=r, column=col).font = fonts[style]
 
-        # Client feedback: when the SOURCE itself is already in the target
-        # language (burned-in on-screen text), paint the source cell AND the
-        # adjacent translated cell in the linking blue so the pair stands out.
+        # When the SOURCE itself is already in the target language (burned-in
+        # on-screen text), paint the source cell AND the adjacent translated
+        # cell in the linking blue so the pair stands out.
         if v.src_flag:
             for col in (src_col, tgt_col, ncols + 5):
                 ws.cell(row=r, column=col).fill = fills["NOTE"]

@@ -2,8 +2,7 @@
 Headless tests for the Translation QC engine (translation_qc.py).
 
 Uses ONLY synthetic data - client sheets must never enter the repo.
-Covers the golden set from PRD/PRD_2_AI_Implementation.md sec 7.2 plus the
-precision & source-language rules.
+Covers the verdict golden set plus the precision & source-language rules.
 
 Run:  python test_translation_qc.py
 """
@@ -36,7 +35,6 @@ def v(src, tgt):
 
 
 def test_golden_synthetic():
-    # PRD sec 7.2 anchors
     r = v("The market is rising quickly", "El mercado está subiendo rápidamente")
     check("golden.pass", (r.verdict, r.src_flag), ("PASS", False))
 
@@ -62,8 +60,8 @@ def test_precision_rule():
 
 
 def test_cognate_false_positives():
-    # Client feedback round 4: correctly-translated Spanish rows were shown
-    # yellow because of cognate char overlap / single words. Must be PASS.
+    # Correctly-translated Spanish rows must not flag yellow just because the
+    # Spanish looks like the English (cognates, single words, bylines/dates).
     r = v("Produced by", "Producido por")
     check("cognate.producido_por", (r.verdict, r.severity), ("PASS", "PASS"))
     r = v("Hosts", "Presentadores")
@@ -126,7 +124,7 @@ def test_end_to_end_and_nondestructive():
 
 
 def test_xlsx_input():
-    # .xlsx sheets are accepted alongside .csv (client feedback round 3)
+    # .xlsx sheets are accepted alongside .csv
     from openpyxl import Workbook, load_workbook
     with tempfile.TemporaryDirectory() as tmp:
         pin = os.path.join(tmp, "sheet.xlsx")

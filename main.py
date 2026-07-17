@@ -12,7 +12,7 @@ from tkinter import ttk, messagebox, filedialog
 # ==========================================
 
 APP_NAME = "SyncFlow Automator"
-APP_VERSION = "1.4.1"
+APP_VERSION = "1.5.0"
 
 # Translation QC engine (optional: app still works without it)
 try:
@@ -398,9 +398,8 @@ class SyncFlowApp:
         style.configure("TCombobox", fieldbackground="#1e1e24", background="#2d2d34",
                         foreground="#ffffff", arrowcolor="#ffffff")
         # Our comboboxes are state="readonly", and clam swaps in a LIGHT field
-        # background for that state while the foreground stays white - the
-        # language names were invisible (client feedback round 5). Pin every
-        # relevant state explicitly.
+        # background for that state while the foreground stays white, making
+        # the language names invisible. Pin every relevant state explicitly.
         style.map("TCombobox",
                   fieldbackground=[("readonly", "#1e1e24"), ("disabled", "#1e1e24")],
                   foreground=[("readonly", "#ffffff"), ("disabled", "#6a6a72")],
@@ -673,11 +672,11 @@ class SyncFlowApp:
         except Exception as e:
             messagebox.showerror("Failure", str(e))
 
-    # ---------- Translation QC tab (PRD/PRD_2_AI_Implementation.md §6) ----------
+    # ---------- Translation QC tab ----------
 
-    # Language dropdowns show full names (client feedback round 4), engine
-    # keeps using ISO codes. Names come from the engine's LANG_PROFILES so
-    # adding a language there automatically surfaces here.
+    # Language dropdowns show full names, the engine keeps using ISO codes.
+    # Names come from the engine's LANG_PROFILES so adding a language there
+    # automatically surfaces here.
     _FALLBACK_LANG_NAMES = {"en": "English", "es": "Spanish (Latin America)"}
 
     def _lang_maps(self):
@@ -757,9 +756,9 @@ class SyncFlowApp:
             activebackground="#218838", activeforeground="white", command=self.qc_open_result)
         self.qc_btn_open.pack(side=tk.RIGHT, ipady=4, ipadx=8)
 
-        # --- Read-only result grid (client feedback round 4): view the QC
-        # output inside the tool instead of switching to Excel. Treeview is
-        # display-only by design - cells cannot be edited.
+        # --- Read-only result grid: view the QC output inside the tool
+        # instead of switching to Excel. Treeview is display-only by design -
+        # cells cannot be edited.
         grid_wrap = tk.Frame(f, bg="#1e1e24")
         grid_wrap.pack(fill=tk.BOTH, expand=True)
         cols = ("row", "source", "translation", "verdict", "severity", "reason")
@@ -800,7 +799,7 @@ class SyncFlowApp:
     GRID_MAX_ROWS = 5000           # in-app viewer cap; the Excel always has everything
 
     # Disabled tk.Buttons keep their bright bg while the text goes system-gray
-    # (unreadable - client feedback round 5). Swap the full look with the state.
+    # (unreadable on our dark theme). Swap the full look with the state.
     @staticmethod
     def _set_btn_enabled(btn, enabled, bg, fg="white"):
         if enabled:
@@ -825,7 +824,7 @@ class SyncFlowApp:
         self.qc_tgt_lang.set(s)
 
     def qc_clear(self):
-        """Start-over button (client feedback round 4): fresh tab state."""
+        """Reset the QC tab to a fresh state."""
         if self.qc_running:
             return
         self._qc_grid_gen += 1                     # cancel in-flight inserts
