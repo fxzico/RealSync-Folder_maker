@@ -687,9 +687,9 @@ class SyncFlowApp:
 
     def qc_browse_file(self):
         sel = filedialog.askopenfilename(filetypes=[
-            ("OST sheets (CSV / Excel)", "*.csv;*.xlsx;*.xlsm"),
+            ("OST sheets (CSV / Excel)", "*.csv *.xlsx *.xlsm"),
             ("CSV sheets", "*.csv"),
-            ("Excel workbooks", "*.xlsx;*.xlsm"),
+            ("Excel workbooks", "*.xlsx *.xlsm"),
             ("All files", "*.*"),
         ])
         if sel:

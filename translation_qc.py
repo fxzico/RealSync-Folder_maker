@@ -455,6 +455,11 @@ def run_qc(input_path, source_lang="en", target_lang="es",
     Returns {"out", "results", "data", "severity", "verdicts", "src_notes"}.
     progress_cb(done_rows, total_rows) is called every 500 rows if given.
     """
+    out = out_path or (os.path.splitext(input_path)[0] + "_QC_highlighted.xlsx")
+    # Flag-only guarantee (invariant I2): never write onto the input sheet.
+    # normcase: Windows paths are case-insensitive.
+    if os.path.normcase(os.path.abspath(out)) == os.path.normcase(os.path.abspath(input_path)):
+        raise SystemExit("Refusing to overwrite the input sheet - choose a different output path.")
     data = read_ost(input_path, source_col, target_col)
     li = LanguageIdentifier((source_lang, target_lang))
     cache = {}
@@ -469,10 +474,6 @@ def run_qc(input_path, source_lang="en", target_lang="es",
         results.append(cache[key])
         if progress_cb and (i % 500 == 0 or i == total - 1):
             progress_cb(i + 1, total)
-    out = out_path or (os.path.splitext(input_path)[0] + "_QC_highlighted.xlsx")
-    # Flag-only guarantee (invariant I2): never write onto the input sheet.
-    if os.path.abspath(out) == os.path.abspath(input_path):
-        raise SystemExit("Refusing to overwrite the input sheet - choose a different output path.")
     write_highlighted_xlsx(data, results, out, source_lang, target_lang)
     return {
         "out": out,

@@ -3,7 +3,7 @@
 A lightweight, **100% offline** desktop utility for video post-production teams. One app, two jobs:
 
 1. **Folder pipelines** — instantly deploy deep character/scene/format directory structures and rename export files based on their folder context.
-2. **Translation QC** *(new in v1.2)* — check whether an OST sheet's translations are actually translated (not just copied English), and get back a colour-coded Excel review copy. Flag-only: your files are never modified.
+2. **Translation QC** *(new in v1.2)* — check whether an OST sheet's translations are actually translated (not just copied English), and get back a colour-coded Excel review copy. Flag-only: your files are never modified. Takes `.csv` **and `.xlsx`** sheets *(v1.3)*.
 
 No internet connection is used or required. Ever.
 
