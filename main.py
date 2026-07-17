@@ -12,7 +12,7 @@ from tkinter import ttk, messagebox, filedialog
 # ==========================================
 
 APP_NAME = "SyncFlow Automator"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 
 # Translation QC engine (optional: app still works without it)
 try:
@@ -353,20 +353,50 @@ class SyncFlowApp:
     def __init__(self, root):
         self.root = root
         self.root.title(f"{APP_NAME}  v{APP_VERSION}")
-        self.root.geometry("680x640")
+        # Responsive: user-resizable, sane floor; last size/position is restored
+        # from settings (see load_settings) and saved on close.
+        self.root.geometry("760x680")
+        self.root.minsize(600, 520)
         self.root.configure(bg="#121214")
+        self._init_styles()
 
         # State
         self._folder_cache = []    # cached folder paths for instant search
         self._search_job = None    # debounce handle
         self.last_rename = None     # (new_path, old_path) for one-step undo
         self.qc_running = False
+        self.qc_last_res = None     # full run_qc result for the in-app viewer
 
         self.build_tabbed_ui()
         self.load_settings()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         if self.ent_path.get().strip():
             self._rebuild_cache()
+
+    def _init_styles(self):
+        """ttk styling for the dark theme (Treeview result grid needs 'clam' -
+        the native Windows theme ignores row background tags)."""
+        style = ttk.Style(self.root)
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+        # Known ttk bug (8.6.9): style maps override tag colors unless the
+        # default '!disabled !selected' entries are stripped.
+        def fixed_map(option):
+            return [e for e in style.map("Treeview", query_opt=option)
+                    if e[:2] != ("!disabled", "!selected")]
+        style.map("Treeview", foreground=fixed_map("foreground"),
+                  background=fixed_map("background"))
+        style.configure("QC.Treeview", background="#1e1e24", fieldbackground="#1e1e24",
+                        foreground="#e6e6e6", rowheight=24, borderwidth=0, font=("Segoe UI", 9))
+        style.configure("QC.Treeview.Heading", background="#2d2d34", foreground="#ffffff",
+                        relief="flat", font=("Segoe UI", 9, "bold"))
+        style.map("QC.Treeview.Heading", background=[("active", "#3e3e46")])
+        style.map("QC.Treeview", background=[("selected", "#007acc")],
+                  foreground=[("selected", "#ffffff")])
+        style.configure("TCombobox", fieldbackground="#1e1e24", background="#2d2d34",
+                        foreground="#ffffff", arrowcolor="#ffffff")
 
     # ---------- Tab switcher (Folders view = original UI, untouched) ----------
 
@@ -630,6 +660,18 @@ class SyncFlowApp:
 
     # ---------- Translation QC tab (PRD/PRD_2_AI_Implementation.md §6) ----------
 
+    # Language dropdowns show full names (client feedback round 4), engine
+    # keeps using ISO codes. Names come from the engine's LANG_PROFILES so
+    # adding a language there automatically surfaces here.
+    _FALLBACK_LANG_NAMES = {"en": "English", "es": "Spanish (es-419)"}
+
+    def _lang_maps(self):
+        if tqc:
+            code_to_name = {c: p["name"] for c, p in tqc.LANG_PROFILES.items()}
+        else:
+            code_to_name = dict(self._FALLBACK_LANG_NAMES)
+        return code_to_name, {v: k for k, v in code_to_name.items()}
+
     def build_qc_ui(self):
         f = tk.Frame(self.qc_frame, bg="#121214", padx=20, pady=20)
         f.pack(fill=tk.BOTH, expand=True)
@@ -645,45 +687,99 @@ class SyncFlowApp:
 
         row2 = tk.Frame(f, bg="#121214")
         row2.pack(fill=tk.X, pady=(0, 12))
+        code_to_name, _ = self._lang_maps()
+        names = list(code_to_name.values())
         tk.Label(row2, text="Source language:", fg="#b0b0b8", bg="#121214").pack(side=tk.LEFT)
-        langs = list(tqc.LANG_PROFILES.keys()) if tqc else ["en", "es"]
-        self.qc_src_lang = tk.StringVar(value="en")
-        self.qc_tgt_lang = tk.StringVar(value="es")
-        ttk.Combobox(row2, textvariable=self.qc_src_lang, values=langs, width=6,
+        self.qc_src_lang = tk.StringVar(value=code_to_name.get("en", names[0]))
+        self.qc_tgt_lang = tk.StringVar(value=code_to_name.get("es", names[-1]))
+        ttk.Combobox(row2, textvariable=self.qc_src_lang, values=names, width=17,
                      state="readonly").pack(side=tk.LEFT, padx=(6, 14))
         tk.Button(row2, text="⇄ Swap", bg="#2d2d34", fg="white", relief="flat",
                   activebackground="#3e3e46", activeforeground="white",
                   command=self.qc_swap_langs).pack(side=tk.LEFT, padx=(0, 14))
         tk.Label(row2, text="Target language:", fg="#b0b0b8", bg="#121214").pack(side=tk.LEFT)
-        ttk.Combobox(row2, textvariable=self.qc_tgt_lang, values=langs, width=6,
+        ttk.Combobox(row2, textvariable=self.qc_tgt_lang, values=names, width=17,
                      state="readonly").pack(side=tk.LEFT, padx=(6, 0))
 
+        row3 = tk.Frame(f, bg="#121214")
+        row3.pack(fill=tk.X, pady=(4, 4))
         self.qc_btn_run = tk.Button(
-            f, text="▶ Run Translation QC", bg="#007acc", fg="white",
+            row3, text="▶ Run Translation QC", bg="#007acc", fg="white",
             font=("Segoe UI", 10, "bold"), relief="flat",
             activebackground="#0098ff", activeforeground="white", command=self.qc_run)
-        self.qc_btn_run.pack(fill=tk.X, pady=(4, 4), ipady=6)
+        self.qc_btn_run.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=6)
+        self.qc_btn_clear = tk.Button(
+            row3, text="🗑 Clear", bg="#2d2d34", fg="white",
+            font=("Segoe UI", 10, "bold"), relief="flat",
+            activebackground="#3e3e46", activeforeground="white", command=self.qc_clear)
+        self.qc_btn_clear.pack(side=tk.LEFT, padx=(6, 0), ipady=6, ipadx=8)
 
         self.qc_lbl_status = tk.Label(f, text="Pick a sheet and press Run. The source file is never modified.",
                                       fg="#8a8a92", bg="#121214", anchor=tk.W, justify=tk.LEFT)
-        self.qc_lbl_status.pack(fill=tk.X, pady=(4, 8))
+        self.qc_lbl_status.pack(fill=tk.X, pady=(4, 6))
 
-        # Results summary area
-        self.qc_results = tk.Frame(f, bg="#1e1e24")
-        self.qc_results.pack(fill=tk.BOTH, expand=True)
-        self.qc_txt = tk.Text(self.qc_results, bg="#1e1e24", fg="#e6e6e6", bd=0,
-                              highlightthickness=0, font=("Consolas", 10), state=tk.DISABLED, wrap="word")
-        self.qc_txt.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        for tag, color in (("HIGH", "#ff6b6b"), ("MEDIUM", "#f5a623"), ("LOW", "#e8d06c"),
-                           ("PASS", "#5dd879"), ("NOTE", "#66aaff"), ("HDR", "#ffffff")):
-            self.qc_txt.tag_configure(tag, foreground=color)
+        # --- Summary strip: colored count chips, same palette as the Excel ---
+        self.qc_summary = tk.Frame(f, bg="#121214")
+        self.qc_summary.pack(fill=tk.X, pady=(0, 6))
 
+        # --- Bottom bar: packed BEFORE the grid with side=BOTTOM so it keeps
+        # its space at any window size (pack order = space priority in Tk).
+        bottom = tk.Frame(f, bg="#121214")
+        bottom.pack(side=tk.BOTTOM, fill=tk.X, pady=(8, 0))
+        self.qc_filter_flagged = tk.BooleanVar(value=False)
+        self.qc_chk_flagged = tk.Checkbutton(
+            bottom, text="Flagged rows only", variable=self.qc_filter_flagged,
+            command=self._qc_render_grid, bg="#121214", fg="#b0b0b8",
+            activebackground="#121214", activeforeground="#ffffff",
+            selectcolor="#1e1e24", state=tk.DISABLED)
+        self.qc_chk_flagged.pack(side=tk.LEFT)
         self.qc_btn_open = tk.Button(
-            f, text="📂 Open Highlighted Excel", bg="#28a745", fg="white",
+            bottom, text="📂 Open Highlighted Excel", bg="#28a745", fg="white",
             font=("Segoe UI", 10, "bold"), relief="flat", state=tk.DISABLED,
             activebackground="#218838", activeforeground="white", command=self.qc_open_result)
-        self.qc_btn_open.pack(fill=tk.X, pady=(8, 0), ipady=5)
+        self.qc_btn_open.pack(side=tk.RIGHT, ipady=4, ipadx=8)
+
+        # --- Read-only result grid (client feedback round 4): view the QC
+        # output inside the tool instead of switching to Excel. Treeview is
+        # display-only by design - cells cannot be edited.
+        grid_wrap = tk.Frame(f, bg="#1e1e24")
+        grid_wrap.pack(fill=tk.BOTH, expand=True)
+        cols = ("row", "source", "translation", "verdict", "severity", "reason")
+        self.qc_tree = ttk.Treeview(grid_wrap, columns=cols, show="headings",
+                                    style="QC.Treeview", selectmode="browse")
+        headings = {"row": "#", "source": "Source", "translation": "Translation",
+                    "verdict": "Verdict", "severity": "Severity", "reason": "Why"}
+        widths = {"row": 46, "source": 230, "translation": 230,
+                  "verdict": 120, "severity": 76, "reason": 320}
+        for c in cols:
+            self.qc_tree.heading(c, text=headings[c])
+            stretch = c in ("source", "translation", "reason")
+            self.qc_tree.column(c, width=widths[c], minwidth=44, stretch=stretch,
+                                anchor=(tk.CENTER if c in ("row", "severity") else tk.W))
+        vsb = ttk.Scrollbar(grid_wrap, orient="vertical", command=self.qc_tree.yview)
+        hsb = ttk.Scrollbar(grid_wrap, orient="horizontal", command=self.qc_tree.xview)
+        self.qc_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        grid_wrap.rowconfigure(0, weight=1)
+        grid_wrap.columnconfigure(0, weight=1)
+        self.qc_tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
+        # Row colors = the Excel palette (SEV_FILL), so both views read the same.
+        sev_fill = tqc.SEV_FILL if tqc else {
+            "HIGH": ("FFC7CE", "9C0006"), "MEDIUM": ("FFEB9C", "9C6500"),
+            "LOW": ("FFF2CC", "7F6000"), "PASS": ("C6EFCE", "006100"),
+            "INFO": ("EDEDED", "3F3F3F"), "NOTE": ("BDD7EE", "1F4E79")}
+        for sev, (bg, fg) in sev_fill.items():
+            self.qc_tree.tag_configure(sev, background=f"#{bg}", foreground=f"#{fg}")
+        # Read-only viewer: swallow edit-ish interactions (double-click resize
+        # of headings is fine; cell editing doesn't exist in Treeview).
+        self.qc_tree.bind("<Double-1>", lambda e: "break" if
+                          self.qc_tree.identify_region(e.x, e.y) == "cell" else None)
+
         self.qc_last_out = None
+        self._qc_grid_gen = 0      # invalidates in-flight chunked inserts
+
+    GRID_MAX_ROWS = 5000           # in-app viewer cap; the Excel always has everything
 
     def qc_browse_file(self):
         sel = filedialog.askopenfilename(filetypes=[
@@ -701,11 +797,24 @@ class SyncFlowApp:
         self.qc_src_lang.set(t)
         self.qc_tgt_lang.set(s)
 
-    def _qc_log(self, text, tag=None):
-        self.qc_txt.config(state=tk.NORMAL)
-        self.qc_txt.insert(tk.END, text, tag or ())
-        self.qc_txt.config(state=tk.DISABLED)
-        self.qc_txt.see(tk.END)
+    def qc_clear(self):
+        """Start-over button (client feedback round 4): fresh tab state."""
+        if self.qc_running:
+            return
+        self._qc_grid_gen += 1                     # cancel in-flight inserts
+        self.qc_ent_file.delete(0, tk.END)
+        code_to_name, _ = self._lang_maps()
+        self.qc_src_lang.set(code_to_name.get("en", next(iter(code_to_name.values()))))
+        self.qc_tgt_lang.set(code_to_name.get("es", next(iter(code_to_name.values()))))
+        self.qc_last_res = None
+        self.qc_last_out = None
+        self.qc_filter_flagged.set(False)
+        self.qc_tree.delete(*self.qc_tree.get_children())
+        for w in self.qc_summary.winfo_children():
+            w.destroy()
+        self.qc_btn_open.config(state=tk.DISABLED)
+        self.qc_chk_flagged.config(state=tk.DISABLED)
+        self.qc_lbl_status.config(text="Pick a sheet and press Run. The source file is never modified.")
 
     def qc_run(self):
         if tqc is None:
@@ -717,15 +826,22 @@ class SyncFlowApp:
         if not path or not os.path.isfile(path):
             messagebox.showerror("Error", "Pick a valid .csv or .xlsx sheet first.")
             return
-        src, tgt = self.qc_src_lang.get(), self.qc_tgt_lang.get()
+        _, name_to_code = self._lang_maps()
+        src = name_to_code.get(self.qc_src_lang.get(), self.qc_src_lang.get())
+        tgt = name_to_code.get(self.qc_tgt_lang.get(), self.qc_tgt_lang.get())
         if src == tgt:
             messagebox.showerror("Error", "Source and target language must differ.")
             return
 
         self.qc_running = True
+        self._qc_grid_gen += 1
         self.qc_btn_run.config(state=tk.DISABLED, text="Running…")
+        self.qc_btn_clear.config(state=tk.DISABLED)
         self.qc_btn_open.config(state=tk.DISABLED)
-        self.qc_txt.config(state=tk.NORMAL); self.qc_txt.delete("1.0", tk.END); self.qc_txt.config(state=tk.DISABLED)
+        self.qc_chk_flagged.config(state=tk.DISABLED)
+        self.qc_tree.delete(*self.qc_tree.get_children())
+        for w in self.qc_summary.winfo_children():
+            w.destroy()
         self.qc_lbl_status.config(text="Analysing…")
 
         def progress(done, total):
@@ -746,34 +862,88 @@ class SyncFlowApp:
     def _qc_fail(self, msg):
         self.qc_running = False
         self.qc_btn_run.config(state=tk.NORMAL, text="▶ Run Translation QC")
+        self.qc_btn_clear.config(state=tk.NORMAL)
         self.qc_lbl_status.config(text="Failed.")
         messagebox.showerror("Translation QC failed", msg)
+
+    def _qc_chip(self, text, bg, fg):
+        tk.Label(self.qc_summary, text=text, bg=f"#{bg}", fg=f"#{fg}",
+                 font=("Segoe UI", 9, "bold"), padx=8, pady=2).pack(side=tk.LEFT, padx=(0, 6))
 
     def _qc_done(self, res):
         self.qc_running = False
         self.qc_btn_run.config(state=tk.NORMAL, text="▶ Run Translation QC")
+        self.qc_btn_clear.config(state=tk.NORMAL)
+        self.qc_chk_flagged.config(state=tk.NORMAL)
+        self.qc_last_res = res
         self.qc_last_out = res["out"]
         self.qc_btn_open.config(state=tk.NORMAL)
-        total = len(res["results"])
-        sev = res["severity"]
-        flagged = sev.get("HIGH", 0) + sev.get("MEDIUM", 0)
-        self.qc_lbl_status.config(text=f"Done - {total} rows analysed. Source file untouched.")
 
-        self._qc_log("RESULT SUMMARY\n", "HDR")
-        self._qc_log(f"  Rows analysed : {total}\n")
-        order = [("HIGH", "fix these"), ("MEDIUM", "likely wrong language"),
-                 ("LOW", "quick eyeball"), ("NOTE", "source already target-lang (blue)"),
-                 ("PASS", "translated correctly")]
+        sev = res["severity"]
+        total = len(res["results"])
+        flagged = sev.get("HIGH", 0) + sev.get("MEDIUM", 0)
+        self.qc_lbl_status.config(
+            text=f"Done - {total} rows analysed, {flagged} need action. "
+                 f"Source file untouched. Report: {os.path.basename(res['out'])}")
+
+        for w in self.qc_summary.winfo_children():
+            w.destroy()
+        self._qc_chip(f"Rows {total}", "2d2d34", "ffffff")
+        sev_fill = tqc.SEV_FILL if tqc else {}
+        order = [("HIGH", "fix"), ("MEDIUM", "check language"), ("LOW", "eyeball"),
+                 ("NOTE", "already target-lang"), ("PASS", "ok")]
         for k, hint in order:
-            n = sev.get(k, 0)
-            if k == "NOTE":
-                n = res["src_notes"] if res["src_notes"] else sev.get("NOTE", 0)
+            n = res["src_notes"] if k == "NOTE" else sev.get(k, 0)
             if n:
-                self._qc_log(f"  {k:<7}: {n:>5}   ({hint})\n", k)
-        self._qc_log(f"\n  Action needed (High+Medium): {flagged} row(s)\n",
-                     "HIGH" if flagged else "PASS")
-        self._qc_log("\n  Verdicts: " + ", ".join(f"{k}={v}" for k, v in sorted(res["verdicts"].items())) + "\n")
-        self._qc_log(f"\n  Highlighted Excel:\n  {res['out']}\n", "HDR")
+                bg, fg = sev_fill.get(k, ("2d2d34", "ffffff"))
+                self._qc_chip(f"{k} {n} · {hint}", bg, fg)
+
+        # Column headers reflect the real mapped sheet columns
+        data = res["data"]
+        self.qc_tree.heading("source", text=data["headers"][data["src_idx"]] or "Source")
+        self.qc_tree.heading("translation", text=data["headers"][data["tgt_idx"]] or "Translation")
+        self._qc_render_grid()
+
+    def _qc_render_grid(self):
+        """(Re)fill the read-only viewer from the last result, chunked so the
+        UI never freezes; a generation counter cancels stale fills."""
+        self._qc_grid_gen += 1
+        gen = self._qc_grid_gen
+        self.qc_tree.delete(*self.qc_tree.get_children())
+        res = self.qc_last_res
+        if not res:
+            return
+        data, results = res["data"], res["results"]
+        si, ti = data["src_idx"], data["tgt_idx"]
+        flagged_only = self.qc_filter_flagged.get()
+
+        items = []
+        for i, (row, v) in enumerate(zip(data["rows"], results), start=2):  # row 2 = first data row, matches Excel
+            if flagged_only and v.severity not in ("HIGH", "MEDIUM"):
+                continue
+            tag = "NOTE" if v.src_flag else (v.severity if v.severity else "INFO")
+            items.append((i, row[si] if si < len(row) else "",
+                          row[ti] if ti < len(row) else "", v.verdict, v.severity, v.reason, tag))
+            if len(items) >= self.GRID_MAX_ROWS:
+                break
+
+        truncated = len(items) >= self.GRID_MAX_ROWS
+        CHUNK = 400
+
+        def insert(from_idx=0):
+            if gen != self._qc_grid_gen:
+                return                              # a newer render/clear superseded us
+            for it in items[from_idx:from_idx + CHUNK]:
+                self.qc_tree.insert("", tk.END, values=it[:6], tags=(it[6],))
+            nxt = from_idx + CHUNK
+            if nxt < len(items):
+                self.root.after(1, lambda: insert(nxt))
+            elif truncated:
+                self.qc_tree.insert("", tk.END, tags=("INFO",), values=(
+                    "…", f"Viewer capped at {self.GRID_MAX_ROWS} rows",
+                    "open the Excel for the full sheet", "", "", ""))
+
+        insert()
 
     def qc_open_result(self):
         if self.qc_last_out and os.path.exists(self.qc_last_out):
@@ -837,11 +1007,19 @@ class SyncFlowApp:
                 for key in ("movie", "reel", "chars", "scenes"):
                     if data.get(key):
                         self.entries[key].insert(0, data[key])
+                if data.get("geometry"):
+                    try:
+                        self.root.geometry(data["geometry"])
+                    except tk.TclError:
+                        pass
                 qc = data.get("qc") or {}
+                # Back-compat: settings hold ISO codes ("en"); dropdowns show
+                # full names ("English"). Values already in name form pass through.
+                code_to_name, _ = self._lang_maps()
                 if qc.get("src"):
-                    self.qc_src_lang.set(qc["src"])
+                    self.qc_src_lang.set(code_to_name.get(qc["src"], qc["src"]))
                 if qc.get("tgt"):
-                    self.qc_tgt_lang.set(qc["tgt"])
+                    self.qc_tgt_lang.set(code_to_name.get(qc["tgt"], qc["tgt"]))
                 if qc.get("file"):
                     self.qc_ent_file.insert(0, qc["file"])
         except Exception:
@@ -849,15 +1027,17 @@ class SyncFlowApp:
 
     def save_settings(self):
         try:
+            _, name_to_code = self._lang_maps()
             data = {
                 "path": self.ent_path.get().strip(),
                 "movie": self.entries["movie"].get().strip(),
                 "reel": self.entries["reel"].get().strip(),
                 "chars": self.entries["chars"].get().strip(),
                 "scenes": self.entries["scenes"].get().strip(),
+                "geometry": self.root.winfo_geometry(),
                 "qc": {
-                    "src": self.qc_src_lang.get(),
-                    "tgt": self.qc_tgt_lang.get(),
+                    "src": name_to_code.get(self.qc_src_lang.get(), self.qc_src_lang.get()),
+                    "tgt": name_to_code.get(self.qc_tgt_lang.get(), self.qc_tgt_lang.get()),
                     "file": self.qc_ent_file.get().strip(),
                 },
             }

@@ -26,14 +26,16 @@ No internet connection is used or required. Ever.
 
 ### Translation QC tab (new)
 * Pick an OST sheet — **`.csv` or `.xlsx`** (Deepdub-style exports supported; CSV encoding auto-detected, cp1252 included; for Excel the first worksheet with the OST columns is used automatically).
-* Choose the language pair — **English ⇄ Latin-American Spanish** ships now, both directions (⇄ swap button). More languages are config entries, not code.
-* Press **Run** → get a colour-coded **Excel copy** next to your sheet:
+* Choose the language pair by full name — **English ⇄ Spanish (es-419)** ships now, both directions (⇄ swap button). More languages are config entries, not code.
+* Press **Run** → results appear **inside the app** *(new in v1.4)*: a read-only, colour-coded grid with summary chips, a "flagged rows only" filter, and a **Clear** button to start over. The same colours are written to an **Excel copy** next to your sheet:
   * 🔴 **Red** — translation missing, or English left untranslated
   * 🟡 **Yellow** — verify (identical brand names, partial overlaps)
   * 🟢 **Green** — properly translated
   * 🔵 **Blue** — the on-screen text is *already* in the target language (burned-in video text), shown as a linked source+translation pair
+* Precision tuned on client feedback *(v1.4)*: correctly-translated rows that merely look like their English source (cognates — "Producido por", single words, bylines/dates) are green, not yellow; half-translated "Spanglish" rows still get flagged.
 * **Flag-only guarantee:** the source sheet is read-only — byte-identical after every run.
-* Scales to ~50k rows without freezing (background thread + memoized verdicts).
+* Scales to ~50k rows without freezing (background thread + memoized verdicts; the in-app viewer shows the first 5,000 rows, the Excel always has everything).
+* The window is fully resizable *(v1.4)* — grid and panels reflow, and your window size is remembered.
 
 ## 🖥️ Run from source
 

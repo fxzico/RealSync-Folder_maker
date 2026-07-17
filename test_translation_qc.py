@@ -61,6 +61,24 @@ def test_precision_rule():
     check("precision.originales_not_high", r.severity != "HIGH", True)
 
 
+def test_cognate_false_positives():
+    # Client feedback round 4: correctly-translated Spanish rows were shown
+    # yellow because of cognate char overlap / single words. Must be PASS.
+    r = v("Produced by", "Producido por")
+    check("cognate.producido_por", (r.verdict, r.severity), ("PASS", "PASS"))
+    r = v("Hosts", "Presentadores")
+    check("cognate.presentadores", (r.verdict, r.severity), ("PASS", "PASS"))
+    r = v("Bloomberg Buffalo Bills Add Toronto Sports Stars as Owners",
+          "Vanessa Perdomo | 20 de dic. de 2024")
+    check("cognate.byline_date", (r.verdict, r.severity), ("PASS", "PASS"))
+    # But half-translated ("Spanglish") rows must STAY flagged:
+    r = v("The market is rising", "El mercado is rising")
+    check("cognate.spanglish_still_flagged", r.severity in ("MEDIUM", "HIGH"), True)
+    # And an identical cognate word is still only VERIFY, never silent PASS:
+    r = v("Editor", "Editor")
+    check("cognate.identical_still_verify", (r.verdict, r.severity), ("VERIFY", "LOW"))
+
+
 def test_verify_tier():
     # Identical brands surface as LOW VERIFY (Decision B), never silent, never HIGH
     for brand in ("SAMSUNG", "SK hynix", "Nasdaq", "OpenAI"):
@@ -182,6 +200,7 @@ if __name__ == "__main__":
         pass
     test_golden_synthetic()
     test_precision_rule()
+    test_cognate_false_positives()
     test_verify_tier()
     test_lang_mismatch()
     test_non_translatable()

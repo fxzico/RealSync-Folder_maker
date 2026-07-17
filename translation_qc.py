@@ -48,6 +48,10 @@ LANG_PROFILES = {
             "not you we they he she his her its their our your have has had will would can could "
             "should i but if then than so out up down over under new now"
         ).split()),
+        # Distinctive word endings: morphology evidence so single words
+        # ("Presenters") are still detectable without stopwords/accents.
+        "suffixes": ("ing", "ings", "tion", "tions", "ness", "ment", "ments",
+                     "ally", "fully", "ship", "ward", "wards"),
     },
     "es": {
         "name": "Spanish (es-419)",
@@ -57,6 +61,11 @@ LANG_PROFILES = {
             "lo le no sí pero está están son fue ser hay muy también sobre entre cuando desde sin ya "
             "este esta estos estas nos les nuestra nuestro acciones cierre"
         ).split()),
+        # Distinctive word endings ("Presentadores", "Producido", "claramente").
+        "suffixes": ("ción", "sión", "ciones", "siones", "mente", "ando", "iendo",
+                     "ado", "ada", "ados", "adas", "ido", "ida", "idos", "idas",
+                     "dor", "dora", "dores", "doras", "dad", "dades", "eza",
+                     "ista", "istas", "illo", "illa", "ería"),
     },
 }
 
@@ -73,17 +82,26 @@ class LanguageIdentifier:
     def __init__(self, langs=("en", "es")):
         self.langs = [l for l in langs if l in LANG_PROFILES]
 
+    def scores(self, text):
+        """Raw per-language evidence: stopwords + distinctive suffixes + special chars."""
+        toks = _tokens(text)
+        out = {}
+        for l in self.langs:
+            p = LANG_PROFILES[l]
+            sw = sum(1 for t in toks if t in p["stop"])
+            sx = sum(1 for t in toks
+                     if any(len(t) >= len(s) + 2 and t.endswith(s)
+                            for s in p.get("suffixes", ())))
+            ch = sum(1 for c in (text or "") if c in p["chars"])
+            out[l] = sw + sx + 2 * ch
+        return out
+
     def detect(self, text):
         """Return (lang_code, confidence 0..1). ('und', 0.0) when undecidable."""
         toks = _tokens(text)
         if not toks:
             return ("und", 0.0)
-        scores = {}
-        for l in self.langs:
-            p = LANG_PROFILES[l]
-            sw = sum(1 for t in toks if t in p["stop"])
-            ch = sum(1 for c in (text or "") if c in p["chars"])
-            scores[l] = sw + 2 * ch
+        scores = self.scores(text)
         best = max(scores, key=scores.get)
         total = sum(scores.values())
         if total == 0 or scores[best] == 0:
@@ -171,6 +189,10 @@ def classify(source, target, li, source_lang="en", target_lang="es",
     lang, conf = li.detect(t)
     sim = _similarity(s, t)
     nt = _non_translatable(t)
+    # Source-language evidence *inside the target text* (stopwords/suffixes of
+    # the source language). Distinguishes half-translated rows from pure
+    # cognate overlap ("Produced by" -> "Producido por").
+    src_evid = li.scores(t).get(source_lang, 0)
 
     # Source already in target language: an identical "translation" is EXPECTED
     # (the on-screen text was already Spanish), not lazy copying.
@@ -181,7 +203,7 @@ def classify(source, target, li, source_lang="en", target_lang="es",
 
     v = _classify_target(s, t, lang, conf, sim, nt,
                          source_lang, target_lang, tgt_name,
-                         t_copy, t_partial, min_len, conf_floor)
+                         t_copy, t_partial, min_len, conf_floor, src_evid)
     if src_flag:
         v = v._replace(src_lang=src_lang_det, src_flag=True,
                        reason=v.reason + f" | note: source already contains {tgt_name}")
@@ -189,8 +211,18 @@ def classify(source, target, li, source_lang="en", target_lang="es",
 
 
 def _classify_target(s, t, lang, conf, sim, nt, source_lang, target_lang,
-                     tgt_name, t_copy, t_partial, min_len, conf_floor):
+                     tgt_name, t_copy, t_partial, min_len, conf_floor, src_evid=0):
     """Target-side verdict logic (source-language note handled by classify)."""
+
+    # Reads as the target language with NO source-language evidence in the cell:
+    # that IS a translation. Checked before the overlap heuristics so cognates
+    # ("Producido por" vs "Produced by", 67% char overlap) and shared dates/
+    # names don't drag correct rows into yellow. Identical cells (>= t_copy)
+    # still fall through when the source doesn't read as the target language -
+    # a pure copy provides no evidence of translation work.
+    if (lang == target_lang and conf >= conf_floor and src_evid == 0
+            and sim < t_copy):
+        return Verdict("PASS", "PASS", conf, lang, f"Reads as {tgt_name}")
 
     # Identical / near-identical to the source
     if sim >= t_copy:
