@@ -1,7 +1,7 @@
 """
-translation_qc.py - P0 prototype for OST Translation QC (offline, flag-only).
+translation_qc.py - OST Translation QC (offline, flag-only).
 
-Reads a Deepdub-style OST CSV, flags rows whose target cell is not a real
+Reads an OST sheet (.csv or .xlsx), flags rows whose target cell is not a real
 translation (missing / untranslated copy / wrong language / verify), and writes
 a colour-coded Excel copy. The source file is NEVER modified.
 
@@ -14,14 +14,17 @@ Implements the locked decisions (see PRD/PRD_2_AI_Implementation.md):
      cell already contains the target language (video burned-in text). The
      source cell and the adjacent translated cell are shown in a new colour
      (blue) so the pair is visually linked.
+  F. Input formats (client feedback round 3): .xlsx workbooks are accepted
+     alongside .csv - the first worksheet whose headers map both columns is
+     used, fully-empty padding rows are dropped.
 
 Usage:
-  python translation_qc.py                       # auto-find the CSV in this folder
+  python translation_qc.py                       # auto-find a .csv/.xlsx in this folder
   python translation_qc.py "sheet.csv"
-  python translation_qc.py "sheet.csv" --source en --target es --out report.xlsx
+  python translation_qc.py "sheet.xlsx" --source en --target es --out report.xlsx
   python translation_qc.py "sheet.csv" --source-col transcription --target-col translation
 
-Only `openpyxl` is required (for the Excel export); language detection is stdlib.
+Only `openpyxl` is required (for the Excel input/export); language detection is stdlib.
 """
 import argparse
 import csv
@@ -225,9 +228,10 @@ def _classify_target(s, t, lang, conf, sim, nt, source_lang, target_lang,
 
 
 # ======================================================================
-# CSV INPUT  (encoding auto-detect + delimiter sniff + column auto-map)
+# SHEET INPUT  (.csv: encoding auto-detect + delimiter sniff | .xlsx via openpyxl)
 # ======================================================================
 ENCODINGS = ("utf-8-sig", "utf-8", "cp1252", "latin-1")
+XLSX_EXTS = (".xlsx", ".xlsm", ".xltx", ".xltm")
 SOURCE_HINTS = ["transcription", "source", "original", "text", "dialogue", "english", "eng", "en"]
 TARGET_HINTS = ["translation", "target", "translated", "spanish", "espanol", "español", "es", "las", "es-419"]
 
@@ -258,7 +262,55 @@ def _pick_column(headers, hints, explicit=None):
     return None
 
 
+def _cell_str(v):
+    """Excel cell value -> text. Integral floats lose the fake '.0'."""
+    if v is None:
+        return ""
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v)
+
+
+def read_ost_xlsx(path, source_col=None, target_col=None):
+    """
+    Reads an .xlsx workbook: picks the first worksheet whose header row maps
+    both source and target columns. Fully-empty padding rows (stale Excel
+    dimensions) are dropped. Returns the same dict shape as the CSV reader,
+    so everything downstream is format-agnostic.
+    """
+    from openpyxl import load_workbook
+    wb = load_workbook(path, read_only=True, data_only=True)
+    try:
+        first = None
+        for ws in wb.worksheets:
+            raw = [[_cell_str(c) for c in row] for row in ws.iter_rows(values_only=True)]
+            raw = [r for r in raw if any(c.strip() for c in r)]
+            if not raw:
+                continue
+            headers, rows = raw[0], raw[1:]
+            if first is None:
+                first = (ws.title, headers)
+            try:
+                si = _pick_column(headers, SOURCE_HINTS, source_col)
+                ti = _pick_column(headers, TARGET_HINTS, target_col)
+            except SystemExit:
+                continue   # explicit column not on this sheet - try the next one
+            if si is not None and ti is not None:
+                return {"headers": headers, "rows": rows, "src_idx": si, "tgt_idx": ti,
+                        "encoding": f"xlsx (sheet: {ws.title})", "delimiter": "n/a"}
+        if first is None:
+            raise SystemExit("Empty workbook.")
+        raise SystemExit(f"Could not map source/target columns on any sheet.\n"
+                         f"First sheet '{first[0]}' headers: {first[1]}\n"
+                         f"Use --source-col / --target-col.")
+    finally:
+        wb.close()
+
+
 def read_ost(path, source_col=None, target_col=None):
+    """Reads an OST sheet (.csv or .xlsx) into a format-agnostic dict."""
+    if os.path.splitext(path)[1].lower() in XLSX_EXTS:
+        return read_ost_xlsx(path, source_col, target_col)
     text, enc = _read_text(path)
     try:
         delim = csv.Sniffer().sniff(text[:4096], delimiters=",;\t").delimiter
@@ -418,6 +470,9 @@ def run_qc(input_path, source_lang="en", target_lang="es",
         if progress_cb and (i % 500 == 0 or i == total - 1):
             progress_cb(i + 1, total)
     out = out_path or (os.path.splitext(input_path)[0] + "_QC_highlighted.xlsx")
+    # Flag-only guarantee (invariant I2): never write onto the input sheet.
+    if os.path.abspath(out) == os.path.abspath(input_path):
+        raise SystemExit("Refusing to overwrite the input sheet - choose a different output path.")
     write_highlighted_xlsx(data, results, out, source_lang, target_lang)
     return {
         "out": out,
@@ -440,7 +495,7 @@ def main(argv=None):
         pass
 
     ap = argparse.ArgumentParser(description="OST Translation QC (offline, flag-only).")
-    ap.add_argument("input", nargs="?", help="CSV path (defaults to the first .csv in this folder)")
+    ap.add_argument("input", nargs="?", help="OST sheet path (.csv or .xlsx; defaults to the first one in this folder)")
     ap.add_argument("--source", default="en", help="source language code (default en)")
     ap.add_argument("--target", default="es", help="target language code (default es)")
     ap.add_argument("--source-col", help="explicit source column header")
@@ -451,10 +506,14 @@ def main(argv=None):
     inp = args.input
     if not inp:
         here = os.path.dirname(os.path.abspath(__file__))
-        csvs = [f for f in os.listdir(here) if f.lower().endswith(".csv")]
-        if not csvs:
-            raise SystemExit("No CSV given and none found in this folder.")
-        inp = os.path.join(here, csvs[0])
+        exts = (".csv",) + XLSX_EXTS
+        sheets = sorted(
+            (f for f in os.listdir(here)
+             if f.lower().endswith(exts) and not f.lower().endswith("_qc_highlighted.xlsx")),
+            key=lambda f: (not f.lower().endswith(".csv"), f.lower()))   # prefer .csv, then A-Z
+        if not sheets:
+            raise SystemExit("No sheet given and no .csv/.xlsx found in this folder.")
+        inp = os.path.join(here, sheets[0])
         print(f"[i] Auto-selected: {os.path.basename(inp)}")
 
     load_allowlist_file(os.path.join(app_dir(), "qc_allowlist.txt"))

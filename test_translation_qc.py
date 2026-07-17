@@ -107,6 +107,65 @@ def test_end_to_end_and_nondestructive():
               ["QC_Verdict", "QC_Severity", "QC_Confidence", "QC_TargetLang", "QC_SourceNote", "QC_Reason"])
 
 
+def test_xlsx_input():
+    # .xlsx sheets are accepted alongside .csv (client feedback round 3)
+    from openpyxl import Workbook, load_workbook
+    with tempfile.TemporaryDirectory() as tmp:
+        pin = os.path.join(tmp, "sheet.xlsx")
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "OST"
+        ws.append(["speaker", "start_time", "end_time", "transcription", "translation"])
+        ws.append(["On Screen", "0", "1", "Boom or bust?", "¿Auge o caída?"])
+        ws.append(["On Screen", "0", "1", "SAMSUNG", "SAMSUNG"])
+        ws.append(["On Screen", "0", "1", "The end is near for the bubble", ""])
+        ws.append(["On Screen", 101, 2.5, "Scene 101", "Escena 101"])   # numeric cells -> text
+        ws.append([None, None, None, None, None])                        # padding row -> dropped
+        wb.save(pin)
+
+        before = open(pin, "rb").read()
+        res = q.run_qc(pin)
+        after = open(pin, "rb").read()
+        check("xlsx.nondestructive", before == after, True)
+        check("xlsx.rows_padding_dropped", len(res["results"]), 4)
+        check("xlsx.high_count", res["severity"].get("HIGH", 0), 1)
+        check("xlsx.numeric_cell_str",
+              res["data"]["rows"][3][1:3], ["101", "2.5"])
+        check("xlsx.out_written", os.path.exists(res["out"]), True)
+        out_wb = load_workbook(res["out"])
+        check("xlsx.out_sheets", out_wb.sheetnames, ["QC", "Summary"])
+
+    # header on a later sheet: first sheet unmappable, second sheet is the OST
+    with tempfile.TemporaryDirectory() as tmp:
+        pin = os.path.join(tmp, "multi.xlsx")
+        wb = Workbook()
+        wb.active.title = "Notes"
+        wb.active.append(["just", "random", "columns"])
+        ws2 = wb.create_sheet("OST")
+        ws2.append(["transcription", "translation"])
+        ws2.append(["Boom or bust?", "¿Auge o caída?"])
+        wb.save(pin)
+        res = q.run_qc(pin)
+        check("xlsx.second_sheet_used", "OST" in res["data"]["encoding"], True)
+        check("xlsx.second_sheet_rows", len(res["results"]), 1)
+
+
+def test_refuse_overwriting_input():
+    # run_qc must never write onto the input workbook (flag-only guarantee)
+    from openpyxl import Workbook
+    with tempfile.TemporaryDirectory() as tmp:
+        pin = os.path.join(tmp, "sheet.xlsx")
+        wb = Workbook()
+        wb.active.append(["transcription", "translation"])
+        wb.active.append(["Boom or bust?", "¿Auge o caída?"])
+        wb.save(pin)
+        try:
+            q.run_qc(pin, out_path=pin)
+            check("guard.same_path_refused", "no exception", "SystemExit")
+        except SystemExit:
+            check("guard.same_path_refused", "SystemExit", "SystemExit")
+
+
 def test_reverse_direction():
     # LAS -> ENG ("vice versa"): Spanish source, English target expected
     li = q.LanguageIdentifier(("es", "en"))
@@ -127,6 +186,8 @@ if __name__ == "__main__":
     test_lang_mismatch()
     test_non_translatable()
     test_end_to_end_and_nondestructive()
+    test_xlsx_input()
+    test_refuse_overwriting_input()
     test_reverse_direction()
     print("\nRESULT:", "ALL PASS" if not _failures else f"{len(_failures)} FAILURE(S): {_failures}")
     sys.exit(1 if _failures else 0)

@@ -12,7 +12,7 @@ from tkinter import ttk, messagebox, filedialog
 # ==========================================
 
 APP_NAME = "SyncFlow Automator"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 
 # Translation QC engine (optional: app still works without it)
 try:
@@ -634,7 +634,7 @@ class SyncFlowApp:
         f = tk.Frame(self.qc_frame, bg="#121214", padx=20, pady=20)
         f.pack(fill=tk.BOTH, expand=True)
 
-        tk.Label(f, text="OST Sheet (.csv):", fg="#b0b0b8", bg="#121214").pack(anchor=tk.W, pady=(0, 5))
+        tk.Label(f, text="OST Sheet (.csv / .xlsx):", fg="#b0b0b8", bg="#121214").pack(anchor=tk.W, pady=(0, 5))
         row1 = tk.Frame(f, bg="#121214")
         row1.pack(fill=tk.X, pady=(0, 12))
         self.qc_ent_file = tk.Entry(row1, bg="#1e1e24", fg="#ffffff", bd=1, relief="flat", insertbackground="white")
@@ -686,7 +686,12 @@ class SyncFlowApp:
         self.qc_last_out = None
 
     def qc_browse_file(self):
-        sel = filedialog.askopenfilename(filetypes=[("CSV sheets", "*.csv"), ("All files", "*.*")])
+        sel = filedialog.askopenfilename(filetypes=[
+            ("OST sheets (CSV / Excel)", "*.csv;*.xlsx;*.xlsm"),
+            ("CSV sheets", "*.csv"),
+            ("Excel workbooks", "*.xlsx;*.xlsm"),
+            ("All files", "*.*"),
+        ])
         if sel:
             self.qc_ent_file.delete(0, tk.END)
             self.qc_ent_file.insert(0, sel)
@@ -710,7 +715,7 @@ class SyncFlowApp:
             return
         path = self.qc_ent_file.get().strip()
         if not path or not os.path.isfile(path):
-            messagebox.showerror("Error", "Pick a valid .csv sheet first.")
+            messagebox.showerror("Error", "Pick a valid .csv or .xlsx sheet first.")
             return
         src, tgt = self.qc_src_lang.get(), self.qc_tgt_lang.get()
         if src == tgt:

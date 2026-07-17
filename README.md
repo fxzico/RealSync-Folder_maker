@@ -25,7 +25,7 @@ No internet connection is used or required. Ever.
 * **Quick search** — instant, background-threaded filter over the whole project tree.
 
 ### Translation QC tab (new)
-* Pick an OST `.csv` (Deepdub-style exports supported; encoding auto-detected, cp1252 included).
+* Pick an OST sheet — **`.csv` or `.xlsx`** (Deepdub-style exports supported; CSV encoding auto-detected, cp1252 included; for Excel the first worksheet with the OST columns is used automatically).
 * Choose the language pair — **English ⇄ Latin-American Spanish** ships now, both directions (⇄ swap button). More languages are config entries, not code.
 * Press **Run** → get a colour-coded **Excel copy** next to your sheet:
   * 🔴 **Red** — translation missing, or English left untranslated
@@ -45,7 +45,8 @@ python main.py
 Headless engine (no GUI) for pipelines:
 
 ```bash
-python translation_qc.py "sheet.csv" --source en --target es
+python translation_qc.py "sheet.csv"  --source en --target es
+python translation_qc.py "sheet.xlsx" --source es --target en   # Excel in, both directions
 ```
 
 ## 🧪 Tests
